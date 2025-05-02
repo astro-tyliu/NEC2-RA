@@ -43,7 +43,7 @@ eb_arr = ExecutionBlock(_frq_cntr_step, _port_ex, _epl)
 eepSCdat = lba_model.excite_1by1(eb_arr, save_necfile=True)
 eelSCdat = eepSCdat.get_EELs()
 eepOCdat = eepSCdat.transform_to('OC')
-eepTHdat = eepSCdat.transform_to('TH', imp_load=50.*np.identity(nr_ants))
+# eepTHdat = eepSCdat.transform_to('TH', imp_load=50.*np.identity(nr_ants))
 #eelTHdat = eepTHdat.get_EELs()
 eelOCdat = eepOCdat.get_EELs()
 eepdat = eepOCdat
@@ -109,3 +109,51 @@ for fidx, frq in enumerate(eeldat.eels[0].freqs):
     print('Gain Cal mat')
     print(sv_mat @ np.linalg.inv(h_mat))
 
+# # R = np.e ** (1j * np.deg2rad(R))
+# M = np.e ** (1j * np.deg2rad(M))
+#
+# RT = R.T
+# MT = M.T
+# solution, residuals, rank, singular_values = np.linalg.lstsq(RT, MT, rcond=None)
+# TT = solution
+# T = TT.T
+# indent = '  '
+# print(2 * indent+'true')
+# print(R)
+# print('\n')
+# print(2 * indent+'model')
+# print(M)
+# print('\n')
+# print(2 * indent+'calibrated_coefficient')
+# print(T)
+# print('\n')
+# # TT2 = np.zeros((3, 3))
+# # for i in range(3):
+# #     TT2[:, i] = np.dot(np.linalg.pinv(RT), MT[:, i])
+# # T2 = TT2.T
+# # print(2 * indent+'calibrated_coefficient2')
+# # print(T2)
+# # print('\n')
+# print(2 * indent+'calibration')
+# print(np.dot(T, R))
+# print('\n')
+# print(2 * indent + 'condition_number:', 2 * indent,
+#       np.max(singular_values) / np.min(singular_values[singular_values > 0]))
+# print(np.rad2deg(np.angle(R) - np.angle(M)))
+# T_norm = T / np.linalg.norm(T)
+# print(np.linalg.inv(T_norm))
+# print(Z / np.linalg.norm(Z))
+#
+# # RT = R.T
+# # MT = M.T
+# # TT3 = np.zeros((3, 3), dtype='complex')
+# # for i in range(3):
+# #     RTy = np.hstack((RT, MT[:, i, None]))
+# #     U, s, VH = np.linalg.svd(RTy)
+# #     V = VH.T
+# #     TT3[:, i] = - V[:-1, -1] / V[-1, -1]
+# # T3 = TT3.T
+# # # print(T3)
+# # print(2 * indent+'TLS_calibration')
+# # print(np.dot(T3, R))
+# # print('\n')

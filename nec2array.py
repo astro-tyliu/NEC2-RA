@@ -1282,7 +1282,9 @@ class ArrayModel(StructureModel):
             self.elements_tags.append(list(_))
 
     def arr_pos2arr_delta(self, array_positions):
-        """Absolute array positions to array delta positions"""
+        """Absolute array positions to array delta positions
+        first position and space
+        """
         arr_delta_pos = []
         pos_from = [0., 0., 0.]
         for pos_to in array_positions:
