@@ -29,27 +29,29 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     if excite not in ['X', 'Y']:
         raise ValueError('Invalid param: "polar" must be "X" or "Y".')
 
-    save_necfile = False
-    save_imp = False
-    save_figure = False
-    save_figure_data = False
-    save_EEP = False
+    save_necfile = True
+    save_imp = True
+    save_figure = True
+    save_figure_data = True
+    save_EEP = True
     seed = 42
 
     # ------------------------------------------------------------------------------------------------------- #
+    f_index = 230
     ds = np.load(root_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     # files = ds.files()  # heads
     times = ds['delta_secs'][:, 0]
     data = np.zeros((192, len(times)))
+    print(f'Structure of ds: {ds.files}')
     for i in range(len(times)):
-        data[:, i] = ds[f'arr_{i}'][0, 230, :]
+        data[:, i] = ds[f'arr_{i}'][0, f_index, :]
     data = data[0::2, :]
     # bad antennas
     flag = np.min(data, axis=1) < 1.e7
     del ds, times, data, i
 
     ext_thinwire = True
-    num_ants = 8
+    num_ants = 96
     arr_origin = np.loadtxt(root_path + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0] * 1
@@ -66,14 +68,14 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     puck_height = 1.6
     ant_arm_len = 1.38  # the length of one stick
     proj_arm_len = ant_arm_len / np.sqrt(2)
-    wire_radius = 0.003
+    wire_radius = 0.0003
     sep = 2.5 * wire_radius
 
     model_name = __file__.replace('.py', '')
     lba_model = ArrayModel(model_name)
     lba_model.set_commentline(lba_model.name)
     lba_model.set_commentline('Author: T. Liu')
-    lba_model.set_commentline('Date: 2024-05-09')
+    lba_model.set_commentline('Date: 2025-05-02')
 
     element = []
     if xpol:
@@ -118,7 +120,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     nr_freqs = 1
     nr_thetas = 46
     nr_phis = 180
-    segmentalize = 31
+    segmentalize = 101
     _frq_cntr_step = FreqSteps('lin', nr_freqs, frq_cntr, 2.0)
     lba_model.segmentalize(segmentalize, frq_cntr)
     if ground:
@@ -151,6 +153,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
         prefix = f'dual_{excite.lower()}pol_{num_ants}'
     else:
         prefix = f'dual_{excite.lower()}pol_{num_ants}_{special}'
+    print(11111, prefix)
 
     if save_imp:
         np.save(f'results/{prefix}_f{frq_cntr}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_imp.npy', Z)
@@ -218,10 +221,14 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
 def imp_ants():
     save_figure = False
 
-    xpol = np.load('results/dual_xpol_96_f44.92_s101_numa96_imp.npy')
+    xpol = np.load('results/dual_xpol_96_f44.9_s20_numa96_imp.npy')
     # ypol = np.load('results/dual_ypol_96_f44.92_s101_numa96_imp.npy')
-    # xpol_100 = np.load('results/dual_xpol_100_f44.92_s101_numa96_imp.npy')
-    print(np.shape(xpol))
+    xpol_100 = np.load('results/dual_xpol_100_f44.9_s20_numa96_imp.npy')
+    # xpol = np.load('results/dual_xpol_f44.9_s20_numa96_imp.npy')
+    ypol = np.load('results/dual_ypol_f44.9_s20_numa96_imp.npy')
+    # xpol = np.load('results/dual_xpol_f60_s121_numa96.npy')
+    # ypol = np.load('results/dual_ypol_f60_s121_numa96.npy')
+    print(xpol)
     ants = np.arange(96)
 
     base_fontsize = 18
@@ -234,15 +241,15 @@ def imp_ants():
     fig, ax = plt.subplots(figsize=(12, 8))
 
     self_xpol = np.real(np.diag(xpol[0, :, :]))
-    # self_ypol = np.real(np.diag(ypol[0, :, :]))
-    # self_ypol = np.concatenate((self_ypol[:31], self_ypol[32:]))
-    # self_xpol_100 = np.real(np.diag(xpol_100[0, :, :]))
+    self_ypol = np.real(np.diag(ypol[0, :, :]))
+    self_ypol = np.concatenate((self_ypol[:31], self_ypol[32:]))
+    self_xpol_100 = np.real(np.diag(xpol_100[0, :, :]))
     ax.plot(ants, np.diag(np.real(xpol[0, :, :])), 'y-.', label='x pol')
-    # ax.plot(ants, np.diag(np.real(ypol[0, :, :])), 'r-.', label='y pol')
-    # ax.plot(ants, np.diag(np.real(xpol_100[0, :, :])), 'b-.', label='x pol (spacing * 100)')
-    # text = f'x pol relative std = {format(np.std(self_xpol) / np.mean(self_xpol), ".2%")} \n' \
-    #        f'y pol relative std = {format(np.std(self_ypol) / np.mean(self_ypol), ".2%")}'
-    # ax.text(38, 12.43, text, fontsize=base_fontsize)
+    ax.plot(ants, np.diag(np.real(ypol[0, :, :])), 'r-.', label='y pol')
+    ax.plot(ants, np.diag(np.real(xpol_100[0, :, :])), 'b-.', label='x pol (spacing * 100)')
+    text = f'x pol relative std = {format(np.std(self_xpol) / np.mean(self_xpol), ".2%")} \n' \
+           f'y pol relative std = {format(np.std(self_ypol) / np.mean(self_ypol), ".2%")}'
+    ax.text(38, 12.43, text, fontsize=base_fontsize)
     ax.set_xlabel('No. antennas')
     ax.set_ylabel(r'Impedance ($\Omega$)')
     legend = ax.legend(loc='lower left')
@@ -301,12 +308,12 @@ def power_antenna():
     x_pol = mean[::2, :]
     mean_x = np.mean(x_pol, axis=0)
     std_x = np.std(x_pol, axis=0)
-    mutual_impx = np.load('dual_xpol_f60_s121_numa96.npy')
+    mutual_impx = np.load('results/dual_xpol_f60_s121_numa96.npy')
     self_impx = np.real(np.diag(mutual_impx[0, :, :]))
     relat_stdx = std_x[f_index]/mean_x[f_index]
     print(std_x[f_index]/mean_x[f_index], np.std(self_impx)/np.mean(self_impx))
 
-    base_fontsize = 18
+    base_fontsize = 20
     config = {
         "font.family": 'Times New Roman',  # 设置字体类型
         "font.size": base_fontsize,
@@ -316,11 +323,10 @@ def power_antenna():
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.errorbar(antennas, mean[::2, f_index], yerr=std[::2, f_index], fmt='-o', color='b', ecolor='r', elinewidth=2,
                 capsize=4, capthick=2, markersize=2, linewidth=1)
-    ax.annotate(f'relative std = {format(relat_stdx, ".2%")}', xy=(10, 0.8e8), xytext=(70, 0.9e8),
-                fontsize=base_fontsize)
+    ax.text(70, 1.4e7, f'relative std = {format(relat_stdx, ".2%")}', fontsize=base_fontsize)
     ax.set_title('x polarization')
     ax.set_xlabel('No. antenna')
-    ax.set_ylabel('power')
+    ax.set_ylabel('Self power')
     if save_figure:
         plt.savefig(f'results/power_xpol.eps', dpi=300, facecolor='w')
     plt.show()
@@ -328,23 +334,20 @@ def power_antenna():
     y_pol = np.concatenate((mean[1::2, :][:31], mean[1::2, :][32:]))
     mean_y = np.mean(y_pol, axis=0)
     std_y = np.std(y_pol, axis=0)
-    mutual_impy = np.load('dual_ypol_f60_s121_numa96.npy')
+    mutual_impy = np.load('results/dual_ypol_f60_s121_numa96.npy')
     self_impy = np.real(np.diag(mutual_impy[0, :, :]))
     self_impy = np.concatenate((self_impy[:31], self_impy[32:]))
     relat_stdy = std_y[f_index] / mean_y[f_index]
     print(std_y[f_index]/mean_y[f_index], np.std(self_impy)/np.mean(self_impy))
-    # plt.plot(antennas[:-1], y_pol[:, 300])
-    # plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
     mean[1::2, f_index][31] = np.nan
     ax.errorbar(antennas, mean[1::2, f_index], yerr=std[1::2, f_index], fmt='-o', color='b', ecolor='r', elinewidth=2,
                 capsize=4, capthick=2, markersize=2, linewidth=1)
-    ax.annotate(f'relative std = {format(relat_stdy, ".2%")}', xy=(10, 0.8e8), xytext=(70, 0.85e8),
-                fontsize=base_fontsize)
+    ax.text(70, 1.42e7, f'relative std = {format(relat_stdy, ".2%")}', fontsize=base_fontsize)
     ax.set_title('y polarization')
     ax.set_xlabel('No. antenna')
-    ax.set_ylabel('power')
+    ax.set_ylabel('Self power')
     if save_figure:
         plt.savefig(f'results/power_ypol.eps', dpi=300, facecolor='w')
     plt.show()
@@ -689,7 +692,7 @@ def directivity_phis():
         warnick6.set_ground()
     _port_ex = ('the_port', VoltageSource(1.0))
     nph = 100
-    rps = RadPatternSpec(thets=91., nph=nph, dph=360 / nph, phis=0.)
+    rps = RadPatternSpec(thets=90., nph=nph, dph=360 / nph, phis=0.)
     eb_arr = ExecutionBlock(frq_cntr_step, _port_ex, rps)
 
     #### Set up array of 6 elements with two different spacings
@@ -737,7 +740,7 @@ def directivity_phis():
     #### Plot the results
     phis = rps.as_thetaphis()[1]
 
-    base_fontsize = 12
+    base_fontsize = 16
     config = {
         "font.family": 'Times New Roman',  # 设置字体类型
         "font.size": base_fontsize,
@@ -745,19 +748,22 @@ def directivity_phis():
     }
     rcParams.update(config)
     fig, axs = plt.subplots(len(spacefacs), 1, figsize=(12, 8), sharex=True)
+    plt.subplots_adjust(hspace=0.3)
     print(pows_act_SC)
     for spidx in range(len(spacefacs)):
         pat_SC_dbi = dbi(pats_SC[spidx][ref_ant, :], pows_act_SC[spidx])
         axs[spidx].plot(phis, pat_SC_dbi, 'y-.')
         pat_OC_dbi = dbi(pats_OC[spidx][ref_ant, :], pows_act_OC[spidx])
         axs[spidx].plot(phis, pat_OC_dbi, 'r-.')
-        axs[spidx].set_title(f'd={spacefacs[spidx]}m')
-        axs[spidx].set_xlabel('phi [deg]')
+        axs[spidx].set_title(f'$d = {spacefacs[spidx]}$ m')
         axs[spidx].set_ylabel('Directivity [dBi]')
-        axs[spidx].legend(['SC', 'OC (from SC)'], fontsize=base_fontsize)
+        axs[spidx].set_xlim([0, 360])
+        axs[spidx].set_ylim([-7., 7.])
+        axs[spidx].legend(['SC', 'OC (from SC)'], fontsize=base_fontsize, loc='upper right', bbox_to_anchor=(0.88, 0.4))
+    axs[-1].set_xlabel(r'$\phi$ [deg]')
     plt.tick_params(labelsize=base_fontsize)
     if save_figure:
-        plt.savefig(f'results/directivity_phi.eps', dpi=300, facecolor='w')
+        plt.savefig(f'results/directivity_phis.eps', dpi=300, facecolor='w')
     plt.show()
 
 
@@ -776,7 +782,7 @@ def lofar_directivity_phis():
     puck_width = 0.090
     puck_height = 1.6
     ant_arm_len = 1.38
-    wire_radius = 0.003
+    wire_radius = 0.0003
     sep = 2.5 * wire_radius
 
     model_name = __file__.replace('.py', '')
@@ -921,8 +927,8 @@ def directivity_frqs():
     # Everything scaled to lambda so actual lambda is arbitrary
     # but for simplicity set it to 1m.
     lambda_ = 1
-    p1 = (0., 0., -lambda_ / 2 / 2 + 0.05)
-    p2 = (0., 0., +lambda_ / 2 / 2 - 0.05)
+    p1 = (0., 0., -lambda_ / 2 / 2)
+    p2 = (0., 0., +lambda_ / 2 / 2)
     l12 = (p1, p2)
     wire_radius = 1e-6 * lambda_
 
@@ -998,7 +1004,8 @@ def directivity_frqs():
     #### Plot the results
     frqs = frq_cntr_step.aslist()
 
-    base_fontsize = 12
+    from matplotlib.ticker import ScalarFormatter
+    base_fontsize = 16
     config = {
         "font.family": 'Times New Roman',  # 设置字体类型
         "font.size": base_fontsize,
@@ -1014,19 +1021,23 @@ def directivity_frqs():
         pat_NO_dbi = dbi(pats_NO[spidx][ref_ant, :], pows_act_NO[spidx])
         axs[spidx].plot(frqs, pat_NO_dbi, 'b-.')
         axs[spidx].set_xscale('log')
-        # axs[spidx].set_xticks([300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200])
-        axs[spidx].set_title(f'd = {spacefacs[spidx]*lambda_} m')
-        axs[spidx].set_xlabel('frequencies [MHz]')
+        axs[spidx].set_title(f'$d = {spacefacs[spidx]*lambda_}$ m')
         axs[spidx].set_ylabel('Directivity [dBi]')
-        axs[spidx].legend(['SC', 'OC (from SC)', r'imp load = 50$\Omega$'], fontsize=base_fontsize)
+        axs[spidx].set_ylim([-90, 15])
+        axs[spidx].legend(['SC', 'OC (from SC)', r'imp load = 50 $\Omega$'], fontsize=base_fontsize)
+    axs[-1].set_xticks([200, 400, 600, 800, 1000, 1200])
+    axs[-1].get_xaxis().set_major_formatter(ScalarFormatter())
+    axs[-1].ticklabel_format(style='plain', axis='x')
+    axs[-1].set_xlabel(r'$\nu$ [MHz]')
     plt.tick_params(labelsize=base_fontsize)
+    plt.subplots_adjust(hspace=0.3)
     if save_figure:
         plt.savefig(f'results/directivity_frqs.eps', dpi=300, facecolor='w')
     plt.show()
 
 
 def eels_phis():
-    save_figure = True
+    save_figure = False
 
     #### Build array element antenna
     # Everything scaled to lambda so actual lambda is arbitrary
@@ -1083,7 +1094,7 @@ def eels_phis():
     #### Plot the results
     phis = rps.as_thetaphis()[1]
 
-    base_fontsize = 12
+    base_fontsize = 16
     config = {
         "font.family": 'Times New Roman',  # 设置字体类型
         "font.size": base_fontsize,
@@ -1091,13 +1102,16 @@ def eels_phis():
     }
     rcParams.update(config)
     fig, ax = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+    plt.subplots_adjust(hspace=0.3)
     for spidx in range(len(spacefacs)):
         ax[spidx].plot(phis, Hscs_abs[spidx] * 377, 'y-.', label='SC EEL')
         ax[spidx].plot(phis, hocs_abs[spidx], 'r-.', label='OC (from SC) EEL')
-        ax[spidx].set_title(f'd={spacefacs[spidx]}m')
-        ax[spidx].set_xlabel('phi [deg]')
+        ax[spidx].set_title(f'$d = {spacefacs[spidx]}$ m')
         ax[spidx].set_ylabel('EEL [m]')
-        ax[spidx].legend(loc='upper left')
+        ax[spidx].set_xlim([0, 360])
+        ax[spidx].set_ylim([0., 3.])
+        ax[spidx].legend(fontsize=base_fontsize, loc='upper right', bbox_to_anchor=(0.65, 0.95))
+    ax[-1].set_xlabel(r'$\phi$ [deg]')
     plt.tick_params(labelsize=base_fontsize)
     if save_figure:
         plt.savefig(f'results/EELs_phis.eps', dpi=300, facecolor='w')
@@ -1222,7 +1236,7 @@ def simulate_EEPs():
     puck_width = 0.090
     puck_height = 1.6
     ant_arm_len = 1.38
-    wire_radius = 0.003
+    wire_radius = 0.0003
     sep = 2.5 * wire_radius
 
     p1 = (-np.cos(np.deg2rad(45)) * (ant_arm_len + puck_width) / 2,
@@ -1342,6 +1356,7 @@ def power_simulation():
     nside = 256  # at least 256 to avoid repetition of pixels
     lon = 11.917778
     lat = 57.393056
+    f_index = 230
 
     nr_thetas = 46
     nr_phis = 180
@@ -1392,7 +1407,7 @@ def power_simulation():
     #     # hp.mollview(eep96_healpix[i - 0, :])
     #     # plt.show()
 
-    _1, _2, origin_flags = _load_data(2, 230, 'X')
+    _1, _2, origin_flags = _load_data(2, f_index, 'X')
 
     index_invalid = np.sum(~origin_flags[:31])
     eep61 = np.load('results/dual_xpol_62_parts_EEP_300.npy')[:, 0, :, :, :]
@@ -1568,7 +1583,7 @@ def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, ex
     nr_phis = 180
     segmentalize = 101
 
-    wire_radius = 0.003
+    wire_radius = 0.0003
     sep = 2.5 * wire_radius
     pw = 0.090
     ph = 1.6
@@ -2357,12 +2372,12 @@ def comp_vis():
 if __name__ == '__main__':
     st = time()
     # arr_layout()
-    # simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special=None)
+    simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special=None)
     # imp_ants()
     # power_antenna()
     # power_time()
     # comp_power()
-    statistical_analysis()
+    # statistical_analysis()
     # directivity_phis()
     # lofar_directivity_phis()
     # directivity_frqs()
