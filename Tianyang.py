@@ -29,7 +29,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     if excite not in ['X', 'Y']:
         raise ValueError('Invalid param: "polar" must be "X" or "Y".')
 
-    save_necfile = True
+    save_necfile = False
     save_imp = True
     save_figure = True
     save_figure_data = True
@@ -51,24 +51,22 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     del ds, times, data, i
 
     ext_thinwire = True
-    num_ants = 96
     arr_origin = np.loadtxt(root_path + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0] * 1
     arr_y = arr_pos[:, 1] * 1
     arr_z = np.zeros(len(arr_x))
     arr_pos = np.vstack((arr_x, arr_y, arr_z)).T
-    arr_pos = arr_pos[:num_ants, :]
     # arr_pos = arr_pos[[94, 46, 44, 85, 36, 37, 64, 4], :]
-    # arr_pos = arr_pos[~flag, :]
-    # num_ants = arr_pos.shape[0]
+    arr_pos = arr_pos[~flag, :]
+    num_ants = arr_pos.shape[0]
     # ------------------------------------------------------------------------------------------------------- #
 
     puck_width = 0.090
     puck_height = 1.6
     ant_arm_len = 1.38  # the length of one stick
     proj_arm_len = ant_arm_len / np.sqrt(2)
-    wire_radius = 0.0003
+    wire_radius = 0.0003 * 1
     sep = 2.5 * wire_radius
 
     model_name = __file__.replace('.py', '')
@@ -162,7 +160,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     EEP = eepNOdat.get_antspats_arr()
     print(np.shape(EEP))
     if save_EEP:
-        np.save(f'results/{prefix}_EEP_300.npy', EEP)
+        np.save(f'results/{prefix}_f{frq_cntr}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_EEP.npy', EEP)
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(np.arange(num_ants), np.diag(np.real(Z[0, :, :])))
@@ -190,7 +188,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
             hno_abs = np.append(hno_abs, hno_abs_ants[0, 0, 0])
 
         if save_figure_data:
-            np.save(f'results/{prefix}_figure_data.npy', np.vstack((Hsc_abs, hoc_abs, hno_abs)))
+            np.save(f'results/{prefix}_f{frq_cntr}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_figure_data.npy', np.vstack((Hsc_abs, hoc_abs, hno_abs)))
 
         #### Plot the results
         ants = np.arange(nr_ants)
@@ -212,7 +210,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
         ax.legend(loc='best')
         plt.tick_params(labelsize=base_fontsize)
         if save_figure:
-            plt.savefig(f'results/{prefix}_lofar_eels.eps', dpi=300, facecolor='w')
+            plt.savefig(f'results/{prefix}_f{frq_cntr}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_lofar_eels.eps', dpi=300, facecolor='w')
         plt.show()
 
     return Z
@@ -455,7 +453,7 @@ def comp_power():
     either_ants_flags = origin_flags_2020 + origin_flags_2024
     if polar == 'X':
         either_ants_flags[31] = True  # The data from the antenna 31 in data_2024 are invalid
-    either_ants_flags = np.full(96, False, dtype=bool)
+    # either_ants_flags = np.full(96, False, dtype=bool)
     times_flags = np.full(num_grids, False, dtype=bool)
     # times_flags[:int(num_grids / 2)] = True
     # times_flags[1500:] = True
@@ -577,10 +575,10 @@ def comp_power():
 
     fig, ax = plt.subplots(figsize=(10, 10))
     # ax.scatter(arr_xvalid, arr_yvalid, s=50, c=stds, cmap='Reds')
-    # # scatter = ax.scatter(arr_xvalid, arr_yvalid, s=50, c='red')
-    # ax.scatter(arr_xbroken, arr_ybroken, s=50, c='black', marker='x')
-    # ax.scatter(arr_xinvalid, arr_yinvalid, s=50, c='blue')
-    ax.scatter(arr_x, arr_y, s=50)
+    scatter = ax.scatter(arr_xvalid, arr_yvalid, s=50, c='red')
+    ax.scatter(arr_xbroken, arr_ybroken, s=50, c='black', marker='x')
+    ax.scatter(arr_xinvalid, arr_yinvalid, s=50, c='blue')
+    # ax.scatter(arr_x, arr_y, s=50)
     ax.plot([-28, -22], [-28, -22], color='blue')
     ax.text(-30, -30, 'x pol', fontsize=12)
     ax.plot([-28, -22], [-22, -28], color='blue')
@@ -1363,15 +1361,23 @@ def power_simulation():
     thetas = np.linspace(0, 90, nr_thetas, endpoint=True) * np.pi / 180
     phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
 
-    eep96 = np.load('results/dual_xpol_96_EEP_300.npy')[:, 0, :, :, :]
+    #TODO 分析一下这八张图（不同厚度的wire，不同segment，是否归一化），把发现告诉Tobia
+    # eep96 = np.load('results/dual_xpol_96_EEP_300.npy')[:, 0, :, :, :]
+    # eep96 = np.load('results/dual_xpol_96_EEP_300_old.npy')[:, 0, :, :, :]
+    # eep96 = np.load('results/dual_xpol_96_EEP_300.npy')[:, 0, :, :, :]
+    # eep96 = np.load('results/dual_xpol_96_2_EEP_300.npy')[:, 0, :, :, :]
+    # eep96 = np.load('results/dual_xpol_96_f44.92_s21_numa96_EEP.npy')[:, 0, :, :, :]
+    # eep96 = np.load('results/dual_xpol_96_thick_wire_f44.92_s21_numa96_EEP.npy')[:, 0, :, :, :]
+    # eep96 = np.load('results/dual_xpol_96_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
+    eep96 = np.load('results/dual_xpol_96_thick_wire_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
 
     eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
     eep96_healpix = np.zeros((96, 12 * nside ** 2))
     _, beam960 = _ant_coord_trans(nside, thetas, phis, eep96[0, :, :].T)
     for i in range(96):
         _, beam = _ant_coord_trans(nside, thetas, phis, eep96[i, :, :].T)
-        # beam /= np.sum(beam)
-        beam /= np.sum(beam960)
+        beam /= np.sum(beam)
+        # beam /= np.sum(beam960)
         print(i, np.sum(beam))
         # hp.mollview(beam)
         # plt.show()
@@ -1742,13 +1748,13 @@ def single_antenna():
     thetas = np.linspace(0, 90, nr_thetas, endpoint=True) * np.pi / 180
     phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
     EEPs = np.abs(EEPs[:, 0, :, :, 0]) ** 2 + np.abs(EEPs[:, 0, :, :, 1]) ** 2
-    EEPs = EEPs + 2.j
+    # EEPs = EEPs + 2.j
     EEPs_healpix = np.zeros((nr_samples, 12 * nside ** 2))
     _, beam0 = _ant_coord_trans(nside, thetas, phis, EEPs[0, :, :].T)
     for i in range(nr_samples):
         _, beam = _ant_coord_trans(nside, thetas, phis, EEPs[i, :, :].T)
-        # beam /= np.sum(beam)
-        beam /= np.sum(beam0)
+        beam /= np.sum(beam)
+        # beam /= np.sum(beam0)
         print(i, np.sum(beam))
         # hp.mollview(beam)
         # plt.show()
@@ -2372,7 +2378,7 @@ def comp_vis():
 if __name__ == '__main__':
     st = time()
     # arr_layout()
-    simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special=None)
+    # simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special='broken')
     # imp_ants()
     # power_antenna()
     # power_time()
@@ -2387,7 +2393,7 @@ if __name__ == '__main__':
     # simulate_EEPs()
     # power_simulation()
     # aaa = interferometry()
-    # bbb = single_antenna()
+    bbb = single_antenna()
     # time_test()
     # normalization()
     # vis_simu()
