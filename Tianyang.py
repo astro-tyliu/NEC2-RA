@@ -453,7 +453,7 @@ def comp_power():
     either_ants_flags = origin_flags_2020 + origin_flags_2024
     if polar == 'X':
         either_ants_flags[31] = True  # The data from the antenna 31 in data_2024 are invalid
-    # either_ants_flags = np.full(96, False, dtype=bool)
+    either_ants_flags = np.full(96, False, dtype=bool)
     times_flags = np.full(num_grids, False, dtype=bool)
     # times_flags[:int(num_grids / 2)] = True
     # times_flags[1500:] = True
@@ -486,7 +486,7 @@ def comp_power():
     # ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
     # ks_2024 = np.mean(data_interp_2024) / np.mean(data_interp_2024, axis=1)
     ks_total = np.mean(data_interp_total) / np.mean(data_interp_total, axis=1)
-    ks_total /= ks_total
+    # ks_total /= ks_total
 
     # data_interp_2020 = data_interp_2020 * ks_2020[:, None]
     # data_interp_2024 = data_interp_2024 * ks_2024[:, None]
@@ -2391,9 +2391,9 @@ if __name__ == '__main__':
     # eels_ants()
     # spherical_harmonics()
     # simulate_EEPs()
-    # power_simulation()
+    power_simulation()
     # aaa = interferometry()
-    bbb = single_antenna()
+    # bbb = single_antenna()
     # time_test()
     # normalization()
     # vis_simu()

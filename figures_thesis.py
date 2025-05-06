@@ -565,7 +565,7 @@ def power_antenna():
 
 
 def auto_corr_data():
-    save_figure = True
+    save_figure = False
 
     num_grids = 2000
 
@@ -721,7 +721,7 @@ def imp_ants():
 
 
 def comp_power():
-    save_figure = True
+    save_figure = False
 
     num_grids = 2000
 
@@ -787,6 +787,7 @@ def power_simulation():
     nside = 256  # at least 256 to avoid repetition of pixels
     lon = 11.917778
     lat = 57.393056
+    f_index = 230
 
     nr_thetas = 46
     nr_phis = 180
@@ -794,11 +795,19 @@ def power_simulation():
     phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
 
     eep96 = np.load(f'{data_path}dual_xpol_96_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
+    # eep96 = np.load('results/dual_xpol_96_thick_wire_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
+    _1, _2, origin_flags = _load_data(2, f_index, 'X')
+    index_invalid = np.sum(~origin_flags[:31])
+    eep61 = np.load(f'{data_path}dual_xpol_62_broken_f44.92_s101_numa62_EEP.npy')[:, 0, :, :, :]
+    # eep61 = np.load('results/dual_xpol_62_parts_EEP_300.npy')[:, 0, :, :, :]
+    eep61 = np.delete(eep61, index_invalid, axis=0)
 
     eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
     eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))
     eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))
     _, beam960 = _ant_coord_trans(nside, thetas, phis, eep96[0, :, :].T)
+    eep61 = np.abs(eep61[:, :, :, 0]) ** 2 + np.abs(eep61[:, :, :, 1]) ** 2
+    eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
 
     nr_samples = 96
     EEPs, _, imps = _random_antenna(nr_samples, frq)
@@ -820,6 +829,12 @@ def power_simulation():
         EEPs_norm_single_healpix[i, :] = beam_norm_single
         print(1, i)
 
+    for i in range(61):
+        _, beam61 = _ant_coord_trans(nside, thetas, phis, eep61[i, :, :].T)
+        beam_uni61 = beam61 / np.sum(beam61)
+        eep61_uni_healpix[i, :] = beam_uni61
+        print(2, i)
+
     times = np.linspace(0, 24 * 3600, 1000, endpoint=False)
     base_time = '2020-12-02 11:58:39.000'
     times = Time(base_time, format='iso', scale='utc') + times * u.second
@@ -833,6 +848,7 @@ def power_simulation():
     ants96_temps_norm = np.zeros((timings, 96))
     ants_temps_uni_single = np.zeros((timings, nr_samples))
     ants_temps_norm_single = np.zeros((timings, nr_samples))
+    ants61_temps_uni = np.zeros((timings, 61))
     for t in range(timings):
         (latitude, longitude, elevation) = (str(lat), str(lon), 0)
         ov = LFSMObserver()
@@ -845,20 +861,23 @@ def power_simulation():
         ov.date = datetime(2020, 12, day, hour, minute, base_time.second)
         sky = ov.generate(frq)
         sky = hp.pixelfunc.ud_grade(sky, nside)
-        print(2, day, hour, minute, np.mean(sky))
+        print(3, day, hour, minute, np.mean(sky))
 
         obs_uni = sky[None, :] * eep96_uni_healpix
         obs_norm = sky[None, :] * eep96_norm_healpix
         obs_uni_single = sky[None, :] * EEPs_uni_single_healpix
         obs_norm_single = sky[None, :] * EEPs_norm_single_healpix
+        obs61_uni = sky[None, :] * eep61_uni_healpix
         ant_temp_uni = np.sum(obs_uni, axis=1)
         ant_temp_norm = np.sum(obs_norm, axis=1)
         ant_temp_uni_single = np.sum(obs_uni_single, axis=1)
         ant_temp_norm_single = np.sum(obs_norm_single, axis=1)
+        ant_temp61_uni = np.sum(obs61_uni, axis=1)
         ants96_temps_uni[t, :] = ant_temp_uni
         ants96_temps_norm[t, :] = ant_temp_norm
         ants_temps_uni_single[t, :] = ant_temp_uni_single
         ants_temps_norm_single[t, :] = ant_temp_norm_single
+        ants61_temps_uni[t, :] = ant_temp61_uni
 
     base_fontsize = 26
     config = {
@@ -918,6 +937,136 @@ def power_simulation():
         plt.savefig(f'results/xpol_anttemp_errors_origin.eps', dpi=300, facecolor='w')
     plt.show()
 
+    flags = origin_flags.copy()
+    flags[31] = True
+
+    base_fontsize = 22
+    config = {
+        "font.family": 'Times New Roman',  # 设置字体类型
+        "font.size": base_fontsize,
+        "mathtext.fontset": 'stix',
+    }
+    rcParams.update(config)
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(times[70:] / 3600, (ants61_temps_uni[70:, :] - ants96_temps_uni[70:, ~flags]) / ants96_temps_uni[70:, ~flags])
+    ax.set_title('61 LBA antennas (x polarization)')
+    ax.set_xlabel('Time over 12h')
+    ax.set_ylabel('Relative difference')
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_simulation_reldiff.eps', dpi=300, facecolor='w')
+    plt.show()
+
+
+def power_diff():
+    save_figure = True
+
+    num_grids = 2000
+
+    f_index = 230  # f = 44.92 MHz
+    polar = 'X'
+    base_time_2020 = '2020-12-02 11:58:39.000'
+    base_time_2024 = '2024-09-16 18:08:34.000'
+
+    for mode in ['a', 'b']:
+        data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
+        data_2024, times_2024, origin_flags_2024 = _load_data(2, f_index, polar)
+
+        origin_flags_2024[31] = True  # The data from the antenna 31 in data_2024 are invalid
+        times_flags = np.full(num_grids, False, dtype=bool)
+
+        if mode == 'a':
+            num_ants_2020 = np.sum(~origin_flags_2020)
+            num_ants_2024 = np.sum(~origin_flags_2024)
+            data_2020 = data_2020[~origin_flags_2020, :]
+            data_2024 = data_2024[~origin_flags_2024, :]
+        else:
+            either_ants_flags = origin_flags_2020 + origin_flags_2024
+            times_flags[:int(num_grids / 2)] = True
+            num_ants_2020 = np.sum(~either_ants_flags)
+            num_ants_2024 = np.sum(~either_ants_flags)
+            data_2020 = data_2020[~either_ants_flags, :]
+            data_2024 = data_2024[~either_ants_flags, :]
+
+        times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
+        times_2024 = Time(base_time_2024, format='iso', scale='utc') + times_2024 * u.second
+
+        location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
+        times_2020.location = location
+        times_2024.location = location
+
+        lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
+        lst_2024 = times_2024.sidereal_time('mean').hour  # Transform to sidereal time
+
+        lst_grid = np.linspace(0, 24, num_grids)
+        interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
+        interp_2024 = interp1d(lst_2024, data_2024, kind='linear', fill_value="extrapolate")
+
+        data_interp_2020 = interp_2020(lst_grid)
+        data_interp_2024 = interp_2024(lst_grid)
+        lst_grid = lst_grid[~times_flags]
+        data_interp_2020 = data_interp_2020[:, ~times_flags]
+        data_interp_2024 = data_interp_2024[:, ~times_flags]
+
+        base_fontsize = 26
+        config = {
+            "font.family": 'Times New Roman',  # 设置字体类型
+            "font.size": base_fontsize,
+            "mathtext.fontset": 'stix',
+        }
+        rcParams.update(config)
+
+        if mode == 'a':
+            ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
+            ks_2024 = np.mean(data_interp_2024) / np.mean(data_interp_2024, axis=1)
+            data_interp_2020 = data_interp_2020 * ks_2020[:, None]
+            data_interp_2024 = data_interp_2024 * ks_2024[:, None]
+
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.plot(lst_grid, data_interp_2020.T)
+            ax.set_title(f'{num_ants_2020} LBA antennas (x polarization)')
+            ax.set_xlabel('Time over 24h')
+            ax.set_ylabel('Self power')
+            if save_figure:
+                plt.savefig(f'results/24hautocorr_joint_norm_2020.eps', dpi=300, facecolor='w')
+            plt.show()
+
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.plot(lst_grid, data_interp_2024.T)
+            ax.set_title(f'{num_ants_2024} LBA antennas (x polarization)')
+            ax.set_xlabel('Time over 24h')
+            ax.set_ylabel('Self power')
+            if save_figure:
+                plt.savefig(f'results/24hautocorr_joint_norm_2024.eps', dpi=300, facecolor='w')
+            plt.show()
+
+        else:
+            data_interp_total = np.vstack((data_interp_2020, data_interp_2024))
+            ks_total = np.mean(data_interp_total) / np.mean(data_interp_total, axis=1)
+            data_interp_2020 = data_interp_2020 * ks_total[:num_ants_2020, None]
+            data_interp_2024 = data_interp_2024 * ks_total[num_ants_2020:, None]
+            delta_data = data_interp_2024 - data_interp_2020
+
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.plot(lst_grid, delta_data.T / data_interp_2020.T)
+            ax.set_title(f'{num_ants_2020} LBA antennas (x polarization)')
+            ax.set_xlabel('Time over 12h')
+            ax.set_ylabel('Relative power difference')
+            if save_figure:
+                plt.savefig(f'results/12hautocorr_reldiff.eps', dpi=300, facecolor='w')
+            plt.show()
+
+            rescaled_delta_data = delta_data / data_interp_2020
+            rescaled_delta_data = rescaled_delta_data - np.mean(rescaled_delta_data, axis=0)[None, :]
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.plot(lst_grid, rescaled_delta_data.T)
+            ax.set_title(f'{num_ants_2024} LBA antennas (x polarization)')
+            ax.set_xlabel('Time over 12h')
+            ax.set_ylabel('Rescaled relative difference')
+            if save_figure:
+                plt.savefig(f'results/12hautocorr_rescaled_reldiff.eps', dpi=300, facecolor='w')
+            plt.show()
+
 
 if __name__ == '__main__':
     # directivity_phis()
@@ -926,6 +1075,7 @@ if __name__ == '__main__':
     # power_antenna()
     # auto_corr_data()
     # lofar_layout()
-    imp_ants()
+    # imp_ants()
     # comp_power()
-    # power_simulation()
+    power_simulation()
+    # power_diff()
