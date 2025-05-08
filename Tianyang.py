@@ -57,7 +57,6 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     arr_y = arr_pos[:, 1] * 1
     arr_z = np.zeros(len(arr_x))
     arr_pos = np.vstack((arr_x, arr_y, arr_z)).T
-    # arr_pos = arr_pos[[94, 46, 44, 85, 36, 37, 64, 4], :]
     arr_pos = arr_pos[~flag, :]
     num_ants = arr_pos.shape[0]
     # ------------------------------------------------------------------------------------------------------- #
@@ -66,7 +65,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     puck_height = 1.6
     ant_arm_len = 1.38  # the length of one stick
     proj_arm_len = ant_arm_len / np.sqrt(2)
-    wire_radius = 0.0003 * 1
+    wire_radius = 0.001 * 1
     sep = 2.5 * wire_radius
 
     model_name = __file__.replace('.py', '')
@@ -780,7 +779,7 @@ def lofar_directivity_phis():
     puck_width = 0.090
     puck_height = 1.6
     ant_arm_len = 1.38
-    wire_radius = 0.0003
+    wire_radius = 0.001
     sep = 2.5 * wire_radius
 
     model_name = __file__.replace('.py', '')
@@ -1234,7 +1233,7 @@ def simulate_EEPs():
     puck_width = 0.090
     puck_height = 1.6
     ant_arm_len = 1.38
-    wire_radius = 0.0003
+    wire_radius = 0.001
     sep = 2.5 * wire_radius
 
     p1 = (-np.cos(np.deg2rad(45)) * (ant_arm_len + puck_width) / 2,
@@ -1589,7 +1588,7 @@ def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, ex
     nr_phis = 180
     segmentalize = 101
 
-    wire_radius = 0.0003
+    wire_radius = 0.001
     sep = 2.5 * wire_radius
     pw = 0.090
     ph = 1.6
@@ -2378,7 +2377,7 @@ def comp_vis():
 if __name__ == '__main__':
     st = time()
     # arr_layout()
-    # simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special='broken')
+    simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special='broken')
     # imp_ants()
     # power_antenna()
     # power_time()
@@ -2391,7 +2390,7 @@ if __name__ == '__main__':
     # eels_ants()
     # spherical_harmonics()
     # simulate_EEPs()
-    power_simulation()
+    # power_simulation()
     # aaa = interferometry()
     # bbb = single_antenna()
     # time_test()

@@ -115,7 +115,7 @@ def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, ex
     nr_phis = 180
     segmentalize = 101
 
-    wire_radius = 0.0003
+    wire_radius = 0.001
     sep = 2.5 * wire_radius
     pw = 0.090
     ph = 1.6
@@ -711,7 +711,7 @@ def imp_ants():
     ax.plot(ants, np.diag(np.real(xpol_100[0, :, :])), 'b-.', label='x pol (spacing * 100)')
     text = f'x pol relative std = {format(np.std(self_xpol) / np.mean(self_xpol), ".2%")} \n' \
            f'y pol relative std = {format(np.std(self_ypol) / np.mean(self_ypol), ".2%")}'
-    ax.text(36, 27.17, text, fontsize=base_fontsize)
+    ax.text(36, 27.54, text, fontsize=base_fontsize)
     ax.set_xlabel('No. antennas')
     ax.set_ylabel(r'Impedance ($\Omega$)')
     ax.legend(loc='lower left')
@@ -959,7 +959,7 @@ def power_simulation():
 
 
 def power_diff():
-    save_figure = True
+    save_figure = False
 
     num_grids = 2000
 
@@ -974,19 +974,14 @@ def power_diff():
 
         origin_flags_2024[31] = True  # The data from the antenna 31 in data_2024 are invalid
         times_flags = np.full(num_grids, False, dtype=bool)
-
+        either_ants_flags = origin_flags_2020 + origin_flags_2024
+        num_ants = np.sum(~either_ants_flags)
+        data_2020 = data_2020[~either_ants_flags, :]
+        data_2024 = data_2024[~either_ants_flags, :]
         if mode == 'a':
-            num_ants_2020 = np.sum(~origin_flags_2020)
-            num_ants_2024 = np.sum(~origin_flags_2024)
-            data_2020 = data_2020[~origin_flags_2020, :]
-            data_2024 = data_2024[~origin_flags_2024, :]
+            pass
         else:
-            either_ants_flags = origin_flags_2020 + origin_flags_2024
             times_flags[:int(num_grids / 2)] = True
-            num_ants_2020 = np.sum(~either_ants_flags)
-            num_ants_2024 = np.sum(~either_ants_flags)
-            data_2020 = data_2020[~either_ants_flags, :]
-            data_2024 = data_2024[~either_ants_flags, :]
 
         times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
         times_2024 = Time(base_time_2024, format='iso', scale='utc') + times_2024 * u.second
@@ -1007,6 +1002,7 @@ def power_diff():
         lst_grid = lst_grid[~times_flags]
         data_interp_2020 = data_interp_2020[:, ~times_flags]
         data_interp_2024 = data_interp_2024[:, ~times_flags]
+        print(mode, data_interp_2020.shape, data_interp_2024.shape)
 
         base_fontsize = 26
         config = {
@@ -1024,7 +1020,7 @@ def power_diff():
 
             fig, ax = plt.subplots(figsize=(12, 8))
             ax.plot(lst_grid, data_interp_2020.T)
-            ax.set_title(f'{num_ants_2020} LBA antennas (x polarization)')
+            ax.set_title(f'{num_ants} LBA antennas (x polarization)')
             ax.set_xlabel('Time over 24h')
             ax.set_ylabel('Self power')
             if save_figure:
@@ -1033,7 +1029,7 @@ def power_diff():
 
             fig, ax = plt.subplots(figsize=(12, 8))
             ax.plot(lst_grid, data_interp_2024.T)
-            ax.set_title(f'{num_ants_2024} LBA antennas (x polarization)')
+            ax.set_title(f'{num_ants} LBA antennas (x polarization)')
             ax.set_xlabel('Time over 24h')
             ax.set_ylabel('Self power')
             if save_figure:
@@ -1043,13 +1039,13 @@ def power_diff():
         else:
             data_interp_total = np.vstack((data_interp_2020, data_interp_2024))
             ks_total = np.mean(data_interp_total) / np.mean(data_interp_total, axis=1)
-            data_interp_2020 = data_interp_2020 * ks_total[:num_ants_2020, None]
-            data_interp_2024 = data_interp_2024 * ks_total[num_ants_2020:, None]
+            data_interp_2020 = data_interp_2020 * ks_total[:num_ants, None]
+            data_interp_2024 = data_interp_2024 * ks_total[num_ants:, None]
             delta_data = data_interp_2024 - data_interp_2020
 
             fig, ax = plt.subplots(figsize=(12, 8))
             ax.plot(lst_grid, delta_data.T / data_interp_2020.T)
-            ax.set_title(f'{num_ants_2020} LBA antennas (x polarization)')
+            ax.set_title(f'{num_ants} LBA antennas (x polarization)')
             ax.set_xlabel('Time over 12h')
             ax.set_ylabel('Relative power difference')
             if save_figure:
@@ -1060,7 +1056,7 @@ def power_diff():
             rescaled_delta_data = rescaled_delta_data - np.mean(rescaled_delta_data, axis=0)[None, :]
             fig, ax = plt.subplots(figsize=(12, 8))
             ax.plot(lst_grid, rescaled_delta_data.T)
-            ax.set_title(f'{num_ants_2024} LBA antennas (x polarization)')
+            ax.set_title(f'{num_ants} LBA antennas (x polarization)')
             ax.set_xlabel('Time over 12h')
             ax.set_ylabel('Rescaled relative difference')
             if save_figure:
@@ -1077,5 +1073,5 @@ if __name__ == '__main__':
     # lofar_layout()
     # imp_ants()
     # comp_power()
-    power_simulation()
-    # power_diff()
+    power_diff()
+    # power_simulation()
