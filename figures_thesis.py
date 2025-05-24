@@ -541,7 +541,7 @@ def power_antenna():
     ax.text(70, 1.4e7, f'relative std = {format(relat_stdx, ".2%")}', fontsize=base_fontsize)
     ax.set_title('x polarization')
     ax.set_xlabel('No. antenna')
-    ax.set_ylabel('Self power')
+    ax.set_ylabel('Auto-correlated power')
     if save_figure:
         plt.savefig(f'results/power_xpol.eps', dpi=300, facecolor='w')
     plt.show()
@@ -558,7 +558,7 @@ def power_antenna():
     ax.text(70, 1.42e7, f'relative std = {format(relat_stdy, ".2%")}', fontsize=base_fontsize)
     ax.set_title('y polarization')
     ax.set_xlabel('No. antenna')
-    ax.set_ylabel('Self power')
+    ax.set_ylabel('Auto-correlated power')
     if save_figure:
         plt.savefig(f'results/power_ypol.eps', dpi=300, facecolor='w')
     plt.show()
@@ -612,7 +612,7 @@ def auto_corr_data():
     ax.plot(lst_grid, data_interp_2020.T)
     ax.set_title(f'{num_ants_2020} LBA antennas (x polarization)')
     ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Self power')
+    ax.set_ylabel('Auto-correlated power')
     if save_figure:
         plt.savefig(f'results/24hautocorr_raw.eps', dpi=300, facecolor='w')
     plt.show()
@@ -621,7 +621,7 @@ def auto_corr_data():
     ax.plot(lst_grid, data_interp_2024.T)
     ax.set_title(f'{num_ants_2024} LBA antennas (x polarization)')
     ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Self power')
+    ax.set_ylabel('Auto-correlated power')
     if save_figure:
         plt.savefig(f'results/24hautocorr_raw2.eps', dpi=300, facecolor='w')
     plt.show()
@@ -760,7 +760,7 @@ def comp_power():
     ax.text(6, 2.3e7, f"relative std = {std * 100:.3g}%", fontsize=base_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.5))
     ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Self power')
+    ax.set_ylabel('Auto-correlated power')
     if save_figure:
         plt.savefig(f'results/24hautocorr.eps', dpi=300, facecolor='w')
     plt.show()
@@ -772,7 +772,7 @@ def comp_power():
     ax.text(6, 1.9e7, f"relative std = {std * 100:.3g}%", fontsize=base_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.5))
     ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Self power')
+    ax.set_ylabel('Auto-correlated power')
     if save_figure:
         plt.savefig(f'results/24hautocorr_norm.eps', dpi=300, facecolor='w')
     plt.show()
@@ -940,17 +940,18 @@ def power_simulation():
     flags = origin_flags.copy()
     flags[31] = True
 
-    base_fontsize = 22
-    config = {
-        "font.family": 'Times New Roman',  # 设置字体类型
-        "font.size": base_fontsize,
-        "mathtext.fontset": 'stix',
-    }
-    rcParams.update(config)
+    # base_fontsize = 26
+    # config = {
+    #     "font.family": 'Times New Roman',  # 设置字体类型
+    #     "font.size": base_fontsize,
+    #     "mathtext.fontset": 'stix',
+    # }
+    # rcParams.update(config)
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times[70:] / 3600, (ants61_temps_uni[70:, :] - ants96_temps_uni[70:, ~flags]) / ants96_temps_uni[70:, ~flags])
     ax.set_title('61 LBA antennas (x polarization)')
+    ax.set_ylim([-0.03, 0.03])
     ax.set_xlabel('Time over 12h')
     ax.set_ylabel('Relative difference')
     if save_figure:
@@ -1022,7 +1023,7 @@ def power_diff():
             ax.plot(lst_grid, data_interp_2020.T)
             ax.set_title(f'{num_ants} LBA antennas (x polarization)')
             ax.set_xlabel('Time over 24h')
-            ax.set_ylabel('Self power')
+            ax.set_ylabel('Auto-correlated power')
             if save_figure:
                 plt.savefig(f'results/24hautocorr_joint_norm_2020.eps', dpi=300, facecolor='w')
             plt.show()
@@ -1031,7 +1032,7 @@ def power_diff():
             ax.plot(lst_grid, data_interp_2024.T)
             ax.set_title(f'{num_ants} LBA antennas (x polarization)')
             ax.set_xlabel('Time over 24h')
-            ax.set_ylabel('Self power')
+            ax.set_ylabel('Auto-correlated power')
             if save_figure:
                 plt.savefig(f'results/24hautocorr_joint_norm_2024.eps', dpi=300, facecolor='w')
             plt.show()
@@ -1057,6 +1058,7 @@ def power_diff():
             fig, ax = plt.subplots(figsize=(12, 8))
             ax.plot(lst_grid, rescaled_delta_data.T)
             ax.set_title(f'{num_ants} LBA antennas (x polarization)')
+            ax.set_ylim([-0.03, 0.03])
             ax.set_xlabel('Time over 12h')
             ax.set_ylabel('Rescaled relative difference')
             if save_figure:
@@ -1065,13 +1067,13 @@ def power_diff():
 
 
 if __name__ == '__main__':
-    # directivity_phis()
-    # eels_phis()
-    # directivity_frqs()
-    # power_antenna()
-    # auto_corr_data()
-    # lofar_layout()
-    # imp_ants()
-    # comp_power()
+    directivity_phis()
+    eels_phis()
+    directivity_frqs()
+    power_antenna()
+    auto_corr_data()
+    lofar_layout()
+    imp_ants()
+    comp_power()
     power_diff()
-    # power_simulation()
+    power_simulation()
