@@ -8,7 +8,7 @@ from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire,
 from time import time
 # from pygdsm import GlobalSkyModel16, GSMObserver16, GlobalSkyModel, GSMObserver, LowFrequencySkyModel, LFSMObserver
 from pygdsm import LowFrequencySkyModel, LFSMObserver
-from datetime import datetime
+from datetime import datetime, timedelta
 import healpy as hp
 from tqdm import tqdm
 from astropy.time import Time
@@ -2374,10 +2374,251 @@ def comp_vis():
     plt.show()
 
 
+def power_simulation2():
+    # LOFAR: x to east (several degrees difference), y to north (several degrees difference), z to up
+    # healpix: x to up, y to east, z to north
+    save_figure = False
+    save = True
+    data_path = './figures_thesis_materials/'
+    output_path = './figures_paper_materials/'
+
+    # frq = 44.92
+    frq = 59
+    nside = 256  # at least 256 to avoid repetition of pixels
+    lon = 11.917778
+    lat = 57.393056
+    # f_index = 230
+
+    nr_thetas = 46
+    nr_phis = 180
+    thetas = np.linspace(0, 90, nr_thetas, endpoint=True) * np.pi / 180
+    phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
+
+    eep96 = np.load(f'{data_path}dual_xpol_96_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
+    # _1, _2, origin_flags = _load_data(2, f_index, 'X')
+    # index_invalid = np.sum(~origin_flags[:31])
+    # eep61 = np.load(f'{data_path}dual_xpol_62_broken_f44.92_s101_numa62_EEP.npy')[:, 0, :, :, :]
+    # eep61 = np.delete(eep61, index_invalid, axis=0)
+
+    eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
+    eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))
+    eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))
+    _, beam960 = _ant_coord_trans(nside, thetas, phis, eep96[0, :, :].T)
+    # eep61 = np.abs(eep61[:, :, :, 0]) ** 2 + np.abs(eep61[:, :, :, 1]) ** 2
+    # eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
+
+    nr_samples = 96
+    EEPs, _, imps = _random_antenna(nr_samples, frq)
+    EEPs = np.abs(EEPs[:, 0, :, :, 0]) ** 2 + np.abs(EEPs[:, 0, :, :, 1]) ** 2
+    EEPs_uni_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
+    EEPs_norm_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
+    _, beam0_single = _ant_coord_trans(nside, thetas, phis, EEPs[0, :, :].T)
+
+    EEP_iso, _, imps = _random_antenna(1, frq, rel_std=0.)
+    EEP_iso = np.abs(EEP_iso[:, 0, :, :, 0]) ** 2 + np.abs(EEP_iso[:, 0, :, :, 1]) ** 2
+    _, beam_iso = _ant_coord_trans(nside, thetas, phis, EEP_iso[0, :, :].T)
+    beam_uni_iso = beam_iso / np.sum(beam_iso)
+
+    for i in tqdm(range(96), desc='Generate the beams of the 96-element array and 96 isolated random antennas'):
+        _, beam = _ant_coord_trans(nside, thetas, phis, eep96[i, :, :].T)
+        _, beam_single = _ant_coord_trans(nside, thetas, phis, EEPs[i, :, :].T)
+        beam_uni = beam / np.sum(beam)
+        beam_norm = beam / np.sum(beam960)
+        beam_uni_single = beam_single / np.sum(beam_single)
+        beam_norm_single = beam_single / np.sum(beam0_single)
+        eep96_uni_healpix[i, :] = beam_uni
+        eep96_norm_healpix[i, :] = beam_norm
+        EEPs_uni_single_healpix[i, :] = beam_uni_single
+        EEPs_norm_single_healpix[i, :] = beam_norm_single
+
+    # for i in tqdm(range(61), desc='Generate the beams of the 61-element array'):
+    #     _, beam61 = _ant_coord_trans(nside, thetas, phis, eep61[i, :, :].T)
+        # beam_uni61 = beam61 / np.sum(beam61)
+        # eep61_uni_healpix[i, :] = beam_uni61
+
+    times = np.linspace(0, 24 * 3600, 1000, endpoint=False)
+    base_time = '2020-12-02 11:58:39.000'
+    times = Time(base_time, format='iso', scale='utc') + times * u.second
+    location = EarthLocation(lon=lon * u.deg, lat=lat * u.deg)
+    times.location = location
+    lst = times.sidereal_time('mean').hour  # Transform to sidereal time
+    base_time = times.datetime[np.where(lst == np.min(lst))[0]][0]
+
+    n_samples = 144
+    # times = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
+    time_offsets = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
+    times = np.array([base_time + timedelta(seconds=s) for s in time_offsets])
+    # time_step = 1400 // n_samples
+    ants96_temps_uni = np.zeros((n_samples, 96))
+    ants96_temps_norm = np.zeros((n_samples, 96))
+    ants_temps_uni_single = np.zeros((n_samples, nr_samples))
+    ants_temps_norm_single = np.zeros((n_samples, nr_samples))
+    ants61_temps_uni = np.zeros((n_samples, 61))
+    ants_temps_uni_iso = np.zeros(n_samples)
+    for i, t in enumerate(tqdm(times, desc='Generate the simulated light curves')):
+        (latitude, longitude, elevation) = (str(lat), str(lon), 0)
+        ov = LFSMObserver()
+        ov.lon = longitude
+        ov.lat = latitude
+        ov.elev = elevation
+        # minute = (base_time.minute + t * time_step) % 60
+        # hour = (base_time.hour + (base_time.minute + t * time_step) // 60) % 24
+        # day = base_time.day + (base_time.hour + (base_time.minute + t * time_step) // 60) // 24
+        ov.date = datetime(2020, 12, t.day, t.hour, t.minute, t.second)  # ?????????????? base_time.second
+        sky = ov.generate(frq)
+        sky = hp.pixelfunc.ud_grade(sky, nside)
+
+        obs_uni = sky[None, :] * eep96_uni_healpix
+        obs_norm = sky[None, :] * eep96_norm_healpix
+        obs_uni_single = sky[None, :] * EEPs_uni_single_healpix
+        obs_norm_single = sky[None, :] * EEPs_norm_single_healpix
+        # obs61_uni = sky[None, :] * eep61_uni_healpix
+        obs_uni_iso = sky * beam_uni_iso
+        ant_temp_uni = np.sum(obs_uni, axis=1)
+        ant_temp_norm = np.sum(obs_norm, axis=1)
+        ant_temp_uni_single = np.sum(obs_uni_single, axis=1)
+        ant_temp_norm_single = np.sum(obs_norm_single, axis=1)
+        # ant_temp61_uni = np.sum(obs61_uni, axis=1)
+        ant_temp_uni_iso = np.sum(obs_uni_iso)
+        ants96_temps_uni[i, :] = ant_temp_uni
+        ants96_temps_norm[i, :] = ant_temp_norm
+        ants_temps_uni_single[i, :] = ant_temp_uni_single
+        ants_temps_norm_single[i, :] = ant_temp_norm_single
+        # ants61_temps_uni[t, :] = ant_temp61_uni
+        ants_temps_uni_iso[i] = ant_temp_uni_iso
+
+    edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
+    inner_elems = [i for i in range(96) if i not in edge_elems]
+    ants96_temps_uni_edge = ants96_temps_uni[:, edge_elems]
+    ants96_temps_uni_inner = ants96_temps_uni[:, inner_elems]
+    # ants96_temps_norm_edge = ants96_temps_norm[:, edge_elems]
+    # ants96_temps_norm_inner = ants96_temps_norm[:, inner_elems]
+    ants_temps_uni_single_edge = ants_temps_uni_single[:, edge_elems]
+    ants_temps_uni_single_inner = ants_temps_uni_single[:, inner_elems]
+    # ants_temps_norm_single_edge = ants_temps_norm_single[:, edge_elems]
+    # ants_temps_norm_single_inner = ants_temps_norm_single[:, inner_elems]
+
+    base_fontsize = 26
+    legend_fontsize = base_fontsize
+    text_fontsize = base_fontsize
+    config = {
+        "font.family": 'Times New Roman',  # 设置字体类型
+        "font.size": base_fontsize,
+        "mathtext.fontset": 'stix',
+    }
+    rcParams.update(config)
+
+    # times, ants96_temps_norm, ants_temps_uni_iso, ants96_temps_uni,
+    # ants_temps_norm_single, ants_temps_uni_single
+    if save:
+        np.savez(f'{output_path}power_simulation{frq}.npz',
+                 times=times, ants_temps_uni_iso=ants_temps_uni_iso,
+                 ants96_temps_norm=ants96_temps_norm, ants96_temps_uni=ants96_temps_uni,
+                 ants_temps_norm_single=ants_temps_norm_single, ants_temps_uni_single=ants_temps_uni_single)
+
+    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    ax.plot(times / 3600, ants96_temps_norm)
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
+    std = np.sqrt(np.mean(np.var(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm) ** 2))
+    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_title('Case MC, Raw', fontsize=base_fontsize)
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_simulation_origin.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_simulation_origin.png', dpi=300, facecolor='w')
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    ax.plot(times / 3600, ants96_temps_uni)
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
+    std = np.sqrt(np.mean(np.var(ants96_temps_uni, axis=1) / np.mean(ants96_temps_uni) ** 2))
+    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_title('Case MC, Normalized', fontsize=base_fontsize)
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_simulation.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_simulation.png', dpi=300, facecolor='w')
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    ax.plot(times / 3600, ants96_temps_uni_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
+    ax.plot(times / 3600, ants96_temps_uni_inner[:, 1:], color="#0072B2", linestyle="--")
+    ax.plot(times / 3600, ants96_temps_uni_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(times / 3600, ants96_temps_uni_edge[:, 1:], color="#E69F00", linestyle="-")
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
+    std_inner = np.sqrt(np.mean(np.var(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni) ** 2))
+    ax.text(1.7, 9500, f"relative std inner = {std_inner*100:.3g}%", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    std_edge = np.sqrt(np.mean(np.var(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni) ** 2))
+    ax.text(1.7, 9100, f"relative std edge = {std_edge*100:.3g}%", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_title('Case MC, Normalized (Inner/Edge)', fontsize=base_fontsize)
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_simulation_check_edge.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_simulation_check_edge.png', dpi=300, facecolor='w')
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    ax.plot(times / 3600, ants_temps_norm_single)
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
+    std = np.sqrt(np.mean(np.var(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single) ** 2))
+    ax.text(4.0, 10500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_title('Case NI, raw', fontsize=base_fontsize)
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_errors_origin.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_errors_origin.png', dpi=300, facecolor='w')
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    ax.plot(times / 3600, ants_temps_uni_single)
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
+    std = np.sqrt(np.mean(np.var(ants_temps_uni_single, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_title('Case NI, Normalized', fontsize=base_fontsize)
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_errors.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_errors.png', dpi=300, facecolor='w')
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    ax.plot(times / 3600, ants_temps_uni_single_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
+    ax.plot(times / 3600, ants_temps_uni_single_inner[:, 1:], color="#0072B2", linestyle="--")
+    ax.plot(times / 3600, ants_temps_uni_single_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(times / 3600, ants_temps_uni_single_edge[:, 1:], color="#E69F00", linestyle="-")
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
+    std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+    ax.text(1.8, 9300, f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+    ax.text(1.8, 8900, f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_title('Case NI, Normalized (Inner/Edge)', fontsize=base_fontsize)
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_errors_check_edge.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_errors_check_edge.png', dpi=300, facecolor='w')
+    plt.show()
+
+
 if __name__ == '__main__':
     st = time()
     # arr_layout()
-    simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special='broken')
+    # simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special='broken')
     # imp_ants()
     # power_antenna()
     # power_time()
@@ -2398,6 +2639,7 @@ if __name__ == '__main__':
     # vis_simu()
     # vis_data()
     # comp_vis()
+    power_simulation2()
 
     et = time()
     print("time: %.2f seconds" % (et - st))

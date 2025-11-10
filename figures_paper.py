@@ -6,7 +6,7 @@ from matplotlib import rcParams
 from matplotlib import pyplot as plt
 import pandas as pd
 from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire,
-                  ExecutionBlock, RadPatternSpec, EEPdata)
+                       ExecutionBlock, RadPatternSpec, EEPdata)
 from time import time
 # from pygdsm import GlobalSkyModel16, GSMObserver16, GlobalSkyModel, GSMObserver, LowFrequencySkyModel, LFSMObserver
 from pygdsm import LowFrequencySkyModel, LFSMObserver
@@ -18,10 +18,10 @@ from astropy.coordinates import EarthLocation, Longitude
 import astropy.units as u
 from scipy.interpolate import SmoothSphereBivariateSpline, interp1d
 
-
 np.set_printoptions(precision=4, linewidth=80)
 raw_data_path = '../data/'
 data_path = './figures_thesis_materials/'
+data_path2 = './figures_paper_materials/'
 
 
 def _load_data(data_set, f_index, polar):
@@ -50,7 +50,7 @@ def _load_data(data_set, f_index, polar):
             data = data[1::2, :]
         else:
             raise ValueError('Invalid param: "polar" must be "X" or "Y".')
-        times = np.linspace(0, 24*3600, np.shape(data)[1], endpoint=False)
+        times = np.linspace(0, 24 * 3600, np.shape(data)[1], endpoint=False)
     elif data_set == 2:
         ds = np.load(raw_data_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
         # files = ds.files()  # heads
@@ -235,7 +235,7 @@ def power_antenna():
     x_pol = mean[::2, :]
     mean_x = np.mean(x_pol, axis=0)
     std_x = np.std(x_pol, axis=0)
-    relat_stdx = std_x[f_index]/mean_x[f_index]
+    relat_stdx = std_x[f_index] / mean_x[f_index]
 
     base_fontsize = 20
     config = {
@@ -326,20 +326,6 @@ def auto_corr_data():
         plt.savefig(f'results/24hautocorr_raw.pdf', dpi=300, facecolor='w')
         plt.savefig(f'results/24hautocorr_raw.png', dpi=300, facecolor='w')
     plt.show()
-
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(lst_grid, data_interp_2020.T)
-    # ax.set_title(r'96 actual LBA x-pol antennas in the $\mathbf{dataset\ I}$ (origin)', fontsize=24)
-    # # std = np.mean(np.std(data_interp_2020, axis=0) / np.mean(data_interp_2020, axis=0))
-    # std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
-    # ax.text(6, 2.3e7, f"relative std = {std * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Auto-correlated power')
-    # if save_figure:
-    #     plt.savefig(f'results/24hautocorr.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/24hautocorr.png', dpi=300, facecolor='w')
-    # plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(lst_grid, data_interp_2024.T)
@@ -452,41 +438,163 @@ def imp_ants():
     plt.show()
 
 
+# def comp_power():
+#     save_figure = True
+#
+#     num_grids = 2000
+#
+#     f_index = 230  # f = 44.92 MHz
+#     polar = 'X'
+#     base_time_2020 = '2020-12-02 11:58:39.000'
+#
+#     data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
+#
+#     times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
+#
+#     location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
+#     times_2020.location = location
+#
+#     lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
+#
+#     lst_grid = np.linspace(0, 24, num_grids)
+#     interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
+#     data_interp_2020 = interp_2020(lst_grid)
+#
+#     ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
+#     data_interp_norm_2020 = data_interp_2020 * ks_2020[:, None]
+#
+#     edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
+#     inner_elems = [i for i in range(96) if i not in edge_elems]
+#     data_interp_2020_edge = data_interp_2020[edge_elems, :]
+#     data_interp_2020_inner = data_interp_2020[inner_elems, :]
+#     data_interp_norm_2020_edge = data_interp_norm_2020[edge_elems, :]
+#     data_interp_norm_2020_inner = data_interp_norm_2020[inner_elems, :]
+#
+#     base_fontsize = 26
+#     legend_fontsize = base_fontsize
+#     text_fontsize = base_fontsize
+#     config = {
+#         "font.family": 'Times New Roman',  # 设置字体类型
+#         "font.size": base_fontsize,
+#         "mathtext.fontset": 'stix',
+#     }
+#     rcParams.update(config)
+#
+#     fig, ax = plt.subplots(figsize=(12, 8))
+#     ax.plot(lst_grid, data_interp_2020.T)
+#     ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
+#     # std = np.mean(np.std(data_interp_2020, axis=0) / np.mean(data_interp_2020, axis=0))
+#     std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
+#     ax.text(5, 2.3e7, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
+#             bbox=dict(facecolor='white', alpha=0.))
+#     ax.set_xlabel('Time over 24h')
+#     ax.set_ylabel('Auto-correlated power')
+#     if save_figure:
+#         plt.savefig(f'results/24hautocorr.pdf', dpi=300, facecolor='w')
+#         plt.savefig(f'results/24hautocorr.png', dpi=300, facecolor='w')
+#     plt.show()
+#
+#     fig, ax = plt.subplots(figsize=(12, 8))
+#     ax.plot(lst_grid, data_interp_norm_2020.T)
+#     ax.set_title(r'Case Obs, Calibrated', fontsize=base_fontsize)
+#     # std = np.mean(np.std(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020, axis=0))
+#     std = np.sqrt(np.mean(np.var(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+#     # std2 = np.sqrt(np.mean(np.var(data_interp_norm_2020, axis=0))) / np.mean(data_interp_norm_2020)
+#     # print(std, std2)
+#     ax.text(4.5, 2.0e7, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
+#             bbox=dict(facecolor='white', alpha=0.))
+#     ax.set_xlabel('Time over 24h')
+#     ax.set_ylabel('Auto-correlated power')
+#     if save_figure:
+#         plt.savefig(f'results/24hautocorr_norm.pdf', dpi=300, facecolor='w')
+#         plt.savefig(f'results/24hautocorr_norm.png', dpi=300, facecolor='w')
+#     plt.show()
+#
+#     fig, ax = plt.subplots(figsize=(12, 8))
+#     ax.plot(lst_grid, data_interp_norm_2020_inner[0, :].T, color="#0072B2", linestyle="--", label='inner elements')
+#     ax.plot(lst_grid, data_interp_norm_2020_inner[1:, :].T, color="#0072B2", linestyle="--")
+#     ax.plot(lst_grid, data_interp_norm_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
+#     ax.plot(lst_grid, data_interp_norm_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
+#     ax.set_title(r'Case Obs, Calibrated (Inner/Edge)', fontsize=base_fontsize)
+#     # std = np.mean(np.std(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020, axis=0))
+#     # ax.text(4, 2.1e7, f"relative std total = {std * 100:.3g}%", fontsize=base_fontsize, color='blue',
+#     #         bbox=dict(facecolor='white', alpha=0.5))
+#     # std_inner = np.mean(np.std(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020, axis=0))
+#     std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+#     ax.text(3, 2.1e7, f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
+#             bbox=dict(facecolor='white', alpha=0.))
+#     # std_edge = np.mean(np.std(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020, axis=0))
+#     std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+#     ax.text(3, 2.0e7, f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
+#             bbox=dict(facecolor='white', alpha=0.))
+#     ax.set_xlabel('Time over 24h')
+#     ax.set_ylabel('Auto-correlated power')
+#     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+#     if save_figure:
+#         plt.savefig(f'results/24hautocorr_norm_check_edge.pdf', dpi=300, facecolor='w')
+#         plt.savefig(f'results/24hautocorr_norm_check_edge.png', dpi=300, facecolor='w')
+#     plt.show()
+
+
 def comp_power():
     save_figure = True
 
-    num_grids = 2000
+    edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
+    inner_elems = [i for i in range(96) if i not in edge_elems]
 
-    f_index = 230  # f = 44.92 MHz
+    num_grids = 144
+    frq = 59
+    ds = np.load(raw_data_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+    freqs_mhz = ds['frequencies'] / 1e6
+    f_index = np.argmin(np.abs(freqs_mhz - frq))
+    # f_index = 230  # f = 44.92 MHz
     polar = 'X'
     base_time_2020 = '2020-12-02 11:58:39.000'
 
     data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
-
     times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
 
     location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
     times_2020.location = location
 
     lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
-
-    lst_grid = np.linspace(0, 24, num_grids)
+    if num_grids == len(lst_2020):
+        loc_start = np.where(lst_2020 == np.min(lst_2020))[0][0]
+        lst_grid = np.zeros_like(lst_2020)
+        lst_grid[:len(lst_2020)-loc_start] = lst_2020[loc_start:]
+        lst_grid[len(lst_2020)-loc_start:] = lst_2020[:loc_start]
+    else:
+        lst_grid = np.linspace(0, 24, num_grids)
     interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
     data_interp_2020 = interp_2020(lst_grid)
 
     ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
     data_interp_norm_2020 = data_interp_2020 * ks_2020[:, None]
-
-    edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
-    inner_elems = [i for i in range(96) if i not in edge_elems]
-    data_interp_2020_edge = data_interp_2020[edge_elems, :]
-    data_interp_2020_inner = data_interp_2020[inner_elems, :]
+    # data_interp_2020_edge = data_interp_2020[edge_elems, :]
+    # data_interp_2020_inner = data_interp_2020[inner_elems, :]
     data_interp_norm_2020_edge = data_interp_norm_2020[edge_elems, :]
     data_interp_norm_2020_inner = data_interp_norm_2020[inner_elems, :]
 
-    base_fontsize = 36
-    legend_fontsize = base_fontsize - 4
-    text_fontsize = base_fontsize - 2
+    with np.load(f'{data_path2}power_simulation{frq}.npz', allow_pickle=True) as power_sim:
+        if num_grids == len(lst_2020):
+            # times = lst_grid * 3600
+            times = power_sim['times']
+        else:
+            times = power_sim['times']
+        times = np.linspace(0, 24 * 3600, len(times), endpoint=False)
+        ants_temps_uni_iso = power_sim['ants_temps_uni_iso']
+        ants96_temps_norm = power_sim['ants96_temps_norm']
+        ants96_temps_uni = power_sim['ants96_temps_uni']
+        ants_temps_norm_single = power_sim['ants_temps_norm_single']
+        ants_temps_uni_single = power_sim['ants_temps_uni_single']
+    ants96_temps_uni_edge = ants96_temps_uni[:, edge_elems]
+    ants96_temps_uni_inner = ants96_temps_uni[:, inner_elems]
+    ants_temps_uni_single_edge = ants_temps_uni_single[:, edge_elems]
+    ants_temps_uni_single_inner = ants_temps_uni_single[:, inner_elems]
+
+    base_fontsize = 30
+    legend_fontsize = base_fontsize
+    text_fontsize = base_fontsize
     config = {
         "font.family": 'Times New Roman',  # 设置字体类型
         "font.size": base_fontsize,
@@ -494,489 +602,368 @@ def comp_power():
     }
     rcParams.update(config)
 
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(lst_grid, data_interp_2020.T)
-    # # ax.plot(lst_grid, data_interp_2020_inner[0, :].T, color="#E69F00", linestyle="--", label='inner elements')
-    # # ax.plot(lst_grid, data_interp_2020_inner[1:, :].T, color="#E69F00", linestyle="--")
-    # # ax.plot(lst_grid, data_interp_2020_edge[0, :].T, color="black", linestyle="-", label='edge elements')
-    # # ax.plot(lst_grid, data_interp_2020_edge[1:, :].T, color="black", linestyle="-")
-    # ax.set_title(f'96 LBA antennas (x polarization)')
-    # std = np.mean(np.std(data_interp_2020, axis=0) / np.mean(data_interp_2020, axis=0))
-    # ax.text(6, 2.3e7, f"relative std = {std * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # # std_inner = np.mean(np.std(data_interp_2020_inner, axis=0) / np.mean(data_interp_2020_inner, axis=0))
-    # # ax.text(4.6, 2.45e7, f"relative std inner = {std_inner * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    # #         bbox=dict(facecolor='white', alpha=0.5))
-    # # std_edge = np.mean(np.std(data_interp_2020_edge, axis=0) / np.mean(data_interp_2020_edge, axis=0))
-    # # ax.text(4.6, 2.3e7, f"relative std edge = {std_edge * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    # #         bbox=dict(facecolor='white', alpha=0.5))
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Auto-correlated power')
-    # ax.legend(loc="lower right")
-    # if save_figure:
-    #     plt.savefig(f'results/24hautocorr.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/24hautocorr.png', dpi=300, facecolor='w')
-    # plt.show()
-
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(lst_grid, data_interp_2020.T)
-    ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
-    # std = np.mean(np.std(data_interp_2020, axis=0) / np.mean(data_interp_2020, axis=0))
     std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
-    ax.text(5, 2.3e7, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
+    # loc = 2.3e7  # frq = 44.92
+    loc = 1.7e8  # frq = 59
+    ax.text(5, loc, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
     ax.set_ylabel('Auto-correlated power')
+    ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
         plt.savefig(f'results/24hautocorr.pdf', dpi=300, facecolor='w')
         plt.savefig(f'results/24hautocorr.png', dpi=300, facecolor='w')
     plt.show()
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(lst_grid, data_interp_norm_2020.T)
-    ax.set_title(r'Case Obs, Normalized', fontsize=base_fontsize)
-    # std = np.mean(np.std(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020, axis=0))
-    std = np.sqrt(np.mean(np.var(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    # std2 = np.sqrt(np.mean(np.var(data_interp_norm_2020, axis=0))) / np.mean(data_interp_norm_2020)
-    # print(std, std2)
-    ax.text(4.5, 2.0e7, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Auto-correlated power')
-    if save_figure:
-        plt.savefig(f'results/24hautocorr_norm.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/24hautocorr_norm.png', dpi=300, facecolor='w')
-    plt.show()
+    # fig, ax = plt.subplots(figsize=(12, 8))
+    # ax.plot(lst_grid, data_interp_norm_2020.T)
+    # std = np.sqrt(np.mean(np.var(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+    # ax.text(4.5, 2.0e7, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
+    #         bbox=dict(facecolor='white', alpha=0.))
+    # ax.set_xlim(0, 24)
+    # ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    # ax.set_xlabel('Time over 24h')
+    # ax.set_ylabel('Auto-correlated power')
+    # ax.set_title(r'Case Obs, Normalized', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    # if save_figure:
+    #     plt.savefig(f'results/24hautocorr_norm.pdf', dpi=300, facecolor='w')
+    #     plt.savefig(f'results/24hautocorr_norm.png', dpi=300, facecolor='w')
+    # plt.show()
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(lst_grid, data_interp_norm_2020_inner[0, :].T, color="#0072B2", linestyle="--", label='inner elements')
     ax.plot(lst_grid, data_interp_norm_2020_inner[1:, :].T, color="#0072B2", linestyle="--")
     ax.plot(lst_grid, data_interp_norm_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(lst_grid, data_interp_norm_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
-    ax.set_title(r'Case Obs, Normalized (Inner/Edge)', fontsize=base_fontsize)
-    # std = np.mean(np.std(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020, axis=0))
-    # ax.text(4, 2.1e7, f"relative std total = {std * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # std_inner = np.mean(np.std(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020, axis=0))
+    # loc = [2.1e7, 2.0e7]  # frq = 44.92
+    loc = [1.48e8, 1.4e8]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    ax.text(3, 2.1e7, f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
+    ax.text(3, loc[0], f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
-    # std_edge = np.mean(np.std(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020, axis=0))
     std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    ax.text(3, 2.0e7, f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
+    ax.text(3, loc[1], f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
     ax.set_ylabel('Auto-correlated power')
+    ax.set_title(r'Case Obs, Normalized', fontsize=base_fontsize)
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
         plt.savefig(f'results/24hautocorr_norm_check_edge.pdf', dpi=300, facecolor='w')
         plt.savefig(f'results/24hautocorr_norm_check_edge.png', dpi=300, facecolor='w')
     plt.show()
 
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(lst_grid, data_interp_norm_2020_inner[0, :].T, color="#E69F00", linestyle="--", label='inner elements')
-    # ax.plot(lst_grid, data_interp_norm_2020_inner[1:, :].T, color="#E69F00", linestyle="--")
-    # ax.plot(lst_grid, data_interp_norm_2020_edge[0, :].T, color="black", linestyle="-", label='edge elements')
-    # ax.plot(lst_grid, data_interp_norm_2020_edge[1:, :].T, color="black", linestyle="-")
-    # ax.set_title(f'96 LBA antennas (x polarization)')
-    # mean_vals = np.mean(data_interp_norm_2020, axis=0)
-    # deviations = data_interp_norm_2020_inner - mean_vals
-    # squared_deviations = deviations ** 2
-    # variance_vals = np.mean(squared_deviations, axis=0)
-    # std_inner = np.sqrt(np.mean(variance_vals / np.mean(data_interp_norm_2020) ** 2))
-    # ax.text(4, 2.1e7, f"relative std inner = {std_inner * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # mean_vals = np.mean(data_interp_norm_2020, axis=0)
-    # deviations = data_interp_norm_2020_edge - mean_vals
-    # squared_deviations = deviations ** 2
-    # variance_vals = np.mean(squared_deviations, axis=0)
-    # std_edge = np.sqrt(np.mean(variance_vals / np.mean(data_interp_norm_2020) ** 2))
-    # ax.text(4, 2.0e7, f"relative std edge = {std_edge * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Auto-correlated power')
-    # ax.legend(loc="lower right")
-    # if save_figure:
-    #     plt.savefig(f'results/24hautocorr_norm_check_edge2.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/24hautocorr_norm_check_edge2.png', dpi=300, facecolor='w')
-    # plt.show()
-
-    # diff = np.std(data_interp_norm_2020, axis=0) ** 2 / np.mean(data_interp_norm_2020, axis=0) ** 2 -\
-    #        np.std(data_interp_norm_2020_edge, axis=0) ** 2 / np.mean(data_interp_norm_2020_edge, axis=0) ** 2
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(lst_grid, diff)
-    # plt.show()
-
-
-def power_simulation():
-    # LOFAR: x to east (several degrees difference), y to north (several degrees difference), z to up
-    # healpix: x to up, y to east, z to north
-    save_figure = True
-
-    frq = 44.92
-    nside = 256  # at least 256 to avoid repetition of pixels
-    lon = 11.917778
-    lat = 57.393056
-    f_index = 230
-
-    nr_thetas = 46
-    nr_phis = 180
-    thetas = np.linspace(0, 90, nr_thetas, endpoint=True) * np.pi / 180
-    phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
-
-    eep96 = np.load(f'{data_path}dual_xpol_96_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
-    # eep96 = np.load('results/dual_xpol_96_thick_wire_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
-    _1, _2, origin_flags = _load_data(2, f_index, 'X')
-    index_invalid = np.sum(~origin_flags[:31])
-    eep61 = np.load(f'{data_path}dual_xpol_62_broken_f44.92_s101_numa62_EEP.npy')[:, 0, :, :, :]
-    # eep61 = np.load('results/dual_xpol_62_parts_EEP_300.npy')[:, 0, :, :, :]
-    eep61 = np.delete(eep61, index_invalid, axis=0)
-
-    eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
-    eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))
-    eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))
-    _, beam960 = _ant_coord_trans(nside, thetas, phis, eep96[0, :, :].T)
-    eep61 = np.abs(eep61[:, :, :, 0]) ** 2 + np.abs(eep61[:, :, :, 1]) ** 2
-    eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
-
-    nr_samples = 96
-    EEPs, _, imps = _random_antenna(nr_samples, frq)
-    EEPs = np.abs(EEPs[:, 0, :, :, 0]) ** 2 + np.abs(EEPs[:, 0, :, :, 1]) ** 2
-    EEPs_uni_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
-    EEPs_norm_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
-    _, beam0_single = _ant_coord_trans(nside, thetas, phis, EEPs[0, :, :].T)
-
-    EEP_iso, _, imps = _random_antenna(1, frq, rel_std=0.)
-    EEP_iso = np.abs(EEP_iso[:, 0, :, :, 0]) ** 2 + np.abs(EEP_iso[:, 0, :, :, 1]) ** 2
-    _, beam_iso = _ant_coord_trans(nside, thetas, phis, EEP_iso[0, :, :].T)
-    beam_uni_iso = beam_iso / np.sum(beam_iso)
-
-    for i in tqdm(range(96), desc='Generate the beams of the 96-element array and 96 isolated random antennas'):
-        _, beam = _ant_coord_trans(nside, thetas, phis, eep96[i, :, :].T)
-        _, beam_single = _ant_coord_trans(nside, thetas, phis, EEPs[i, :, :].T)
-        beam_uni = beam / np.sum(beam)
-        beam_norm = beam / np.sum(beam960)
-        beam_uni_single = beam_single / np.sum(beam_single)
-        beam_norm_single = beam_single / np.sum(beam0_single)
-        eep96_uni_healpix[i, :] = beam_uni
-        eep96_norm_healpix[i, :] = beam_norm
-        EEPs_uni_single_healpix[i, :] = beam_uni_single
-        EEPs_norm_single_healpix[i, :] = beam_norm_single
-
-    for i in tqdm(range(61), desc='Generate the beams of the 61-element array'):
-        _, beam61 = _ant_coord_trans(nside, thetas, phis, eep61[i, :, :].T)
-        beam_uni61 = beam61 / np.sum(beam61)
-        eep61_uni_healpix[i, :] = beam_uni61
-
-    times = np.linspace(0, 24 * 3600, 1000, endpoint=False)
-    base_time = '2020-12-02 11:58:39.000'
-    times = Time(base_time, format='iso', scale='utc') + times * u.second
-    location = EarthLocation(lon=lon * u.deg, lat=lat * u.deg)
-    times.location = location
-    lst = times.sidereal_time('mean').hour  # Transform to sidereal time
-    base_time = times.datetime[np.where(lst == np.min(lst))[0]][0]
-
-    timings = 140
-    time_step = 1400 // timings
-    ants96_temps_uni = np.zeros((timings, 96))
-    ants96_temps_norm = np.zeros((timings, 96))
-    ants_temps_uni_single = np.zeros((timings, nr_samples))
-    ants_temps_norm_single = np.zeros((timings, nr_samples))
-    ants61_temps_uni = np.zeros((timings, 61))
-    ants_temps_uni_iso = np.zeros(timings)
-    for t in tqdm(range(timings), desc='Generate the simulated light curves'):
-        (latitude, longitude, elevation) = (str(lat), str(lon), 0)
-        ov = LFSMObserver()
-        ov.lon = longitude
-        ov.lat = latitude
-        ov.elev = elevation
-        minute = (base_time.minute + t * time_step) % 60
-        hour = (base_time.hour + (base_time.minute + t * time_step) // 60) % 24
-        day = base_time.day + (base_time.hour + (base_time.minute + t * time_step) // 60) // 24
-        ov.date = datetime(2020, 12, day, hour, minute, base_time.second)
-        sky = ov.generate(frq)
-        sky = hp.pixelfunc.ud_grade(sky, nside)
-
-        obs_uni = sky[None, :] * eep96_uni_healpix
-        obs_norm = sky[None, :] * eep96_norm_healpix
-        obs_uni_single = sky[None, :] * EEPs_uni_single_healpix
-        obs_norm_single = sky[None, :] * EEPs_norm_single_healpix
-        obs61_uni = sky[None, :] * eep61_uni_healpix
-        obs_uni_iso = sky * beam_uni_iso
-        ant_temp_uni = np.sum(obs_uni, axis=1)
-        ant_temp_norm = np.sum(obs_norm, axis=1)
-        ant_temp_uni_single = np.sum(obs_uni_single, axis=1)
-        ant_temp_norm_single = np.sum(obs_norm_single, axis=1)
-        ant_temp61_uni = np.sum(obs61_uni, axis=1)
-        ant_temp_uni_iso = np.sum(obs_uni_iso)
-        ants96_temps_uni[t, :] = ant_temp_uni
-        ants96_temps_norm[t, :] = ant_temp_norm
-        ants_temps_uni_single[t, :] = ant_temp_uni_single
-        ants_temps_norm_single[t, :] = ant_temp_norm_single
-        ants61_temps_uni[t, :] = ant_temp61_uni
-        ants_temps_uni_iso[t] = ant_temp_uni_iso
-
-    edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
-    inner_elems = [i for i in range(96) if i not in edge_elems]
-    ants96_temps_uni_edge = ants96_temps_uni[:, edge_elems]
-    ants96_temps_uni_inner = ants96_temps_uni[:, inner_elems]
-    ants96_temps_norm_edge = ants96_temps_norm[:, edge_elems]
-    ants96_temps_norm_inner = ants96_temps_norm[:, inner_elems]
-    ants_temps_uni_single_edge = ants_temps_uni_single[:, edge_elems]
-    ants_temps_uni_single_inner = ants_temps_uni_single[:, inner_elems]
-    ants_temps_norm_single_edge = ants_temps_norm_single[:, edge_elems]
-    ants_temps_norm_single_inner = ants_temps_norm_single[:, inner_elems]
-
-    base_fontsize = 36
-    legend_fontsize = base_fontsize - 4
-    text_fontsize = base_fontsize - 2
-    config = {
-        "font.family": 'Times New Roman',  # 设置字体类型
-        "font.size": base_fontsize,
-        "mathtext.fontset": 'stix',
-    }
-    rcParams.update(config)
-
-    times = np.linspace(0, 24 * 3600, timings, endpoint=False)
-
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants96_temps_norm)
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    # std = np.mean(np.std(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm, axis=1))
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
+    # loc = 8500  # frq = 44.92
+    loc = 5200  # frq = 59
     std = np.sqrt(np.mean(np.var(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm) ** 2))
-    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
+    ax.text(4.0, loc, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case MC, Raw', fontsize=base_fontsize)
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
     ax.set_ylabel('Antenna temperature (K)')
+    ax.set_title('Case MC, Raw', fontsize=base_fontsize)
+    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
         plt.savefig(f'results/xpol_anttemp_simulation_origin.pdf', dpi=300, facecolor='w')
         plt.savefig(f'results/xpol_anttemp_simulation_origin.png', dpi=300, facecolor='w')
     plt.show()
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(times / 3600, ants96_temps_uni)
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    # std = np.mean(np.std(ants96_temps_uni, axis=1) / np.mean(ants96_temps_uni, axis=1))
-    std = np.sqrt(np.mean(np.var(ants96_temps_uni, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case MC, Normalized', fontsize=base_fontsize)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Antenna temperature (K)')
-    if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation.png', dpi=300, facecolor='w')
-    plt.show()
+    # fig, ax = plt.subplots(figsize=(12, 8))
+    # ax.plot(times / 3600, ants96_temps_uni)
+    # ax.plot(times / 3600, ants_temps_uni_iso, color='black')
+    # std = np.sqrt(np.mean(np.var(ants96_temps_uni, axis=1) / np.mean(ants96_temps_uni) ** 2))
+    # ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
+    #         bbox=dict(facecolor='white', alpha=0.))
+    # ax.set_xlim(0, 24)
+    # ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    # ax.set_xlabel('Time over 24h')
+    # ax.set_ylabel('Antenna temperature (K)')
+    # ax.set_title('Case MC, Normalized', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    # if save_figure:
+    #     plt.savefig(f'results/xpol_anttemp_simulation.pdf', dpi=300, facecolor='w')
+    #     plt.savefig(f'results/xpol_anttemp_simulation.png', dpi=300, facecolor='w')
+    # plt.show()
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants96_temps_uni_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
     ax.plot(times / 3600, ants96_temps_uni_inner[:, 1:], color="#0072B2", linestyle="--")
     ax.plot(times / 3600, ants96_temps_uni_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants96_temps_uni_edge[:, 1:], color="#E69F00", linestyle="-")
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    # std = np.mean(np.std(ants96_temps_uni, axis=1) / np.mean(ants96_temps_uni, axis=1))
-    # ax.text(3.7, 9000, f"relative std total = {std*100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # std_inner = np.mean(np.std(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni, axis=1))
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
+    # loc = [9500, 9100]  # frq = 44.92
+    loc = [5300, 5000]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    ax.text(1.7, 9500, f"relative std inner = {std_inner*100:.3g}%", fontsize=text_fontsize, color='blue',
+    ax.text(1.7, loc[0], f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
-    # std_edge = np.mean(np.std(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni, axis=1))
     std_edge = np.sqrt(np.mean(np.var(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    ax.text(1.7, 9100, f"relative std edge = {std_edge*100:.3g}%", fontsize=text_fontsize, color='blue',
+    ax.text(1.7, loc[1], f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case MC, Normalized (Inner/Edge)', fontsize=base_fontsize)
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
     ax.set_ylabel('Antenna temperature (K)')
+    ax.set_title('Case MC, Normalized', fontsize=base_fontsize)
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
         plt.savefig(f'results/xpol_anttemp_simulation_check_edge.pdf', dpi=300, facecolor='w')
         plt.savefig(f'results/xpol_anttemp_simulation_check_edge.png', dpi=300, facecolor='w')
     plt.show()
 
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(times / 3600, ants96_temps_uni_inner[:, 0], color="#E69F00", linestyle="--", label='inner elements')
-    # ax.plot(times / 3600, ants96_temps_uni_inner[:, 1:], color="#E69F00", linestyle="--")
-    # ax.plot(times / 3600, ants96_temps_uni_edge[:, 0], color="black", linestyle="-", label='edge elements')
-    # ax.plot(times / 3600, ants96_temps_uni_edge[:, 1:], color="black", linestyle="-")
-    # mean_vals = np.mean(ants96_temps_uni, axis=1)
-    # deviations = ants96_temps_uni_inner - mean_vals[:, np.newaxis]
-    # squared_deviations = deviations ** 2
-    # variance_vals = np.mean(squared_deviations, axis=1)
-    # std_inner = np.sqrt(np.mean(variance_vals / np.mean(ants96_temps_uni) ** 2))
-    # ax.text(3.7, 9000, f"relative std inner = {std_inner*100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # mean_vals = np.mean(ants96_temps_uni, axis=1)
-    # deviations = ants96_temps_uni_edge - mean_vals[:, np.newaxis]
-    # squared_deviations = deviations ** 2
-    # variance_vals = np.mean(squared_deviations, axis=1)
-    # std_edge = np.sqrt(np.mean(variance_vals / np.mean(ants96_temps_uni) ** 2))
-    # ax.text(3.7, 8500, f"relative std edge = {std_edge*100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # ax.set_title('96 LBA antennas (x polarization)')
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Antenna temperature (K)')
-    # ax.legend(loc="lower right")
-    # if save_figure:
-    #     plt.savefig(f'results/xpol_anttemp_simulation_check_edge2.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/xpol_anttemp_simulation_check_edge2.png', dpi=300, facecolor='w')
-    # plt.show()
-
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(times / 3600, ants96_temps_norm_inner[:, 0], color="#E69F00", linestyle="--", label='inner elements')
-    # ax.plot(times / 3600, ants96_temps_norm_inner[:, 1:], color="#E69F00", linestyle="--")
-    # ax.plot(times / 3600, ants96_temps_norm_edge[:, 0], color="black", linestyle="-", label='edge elements')
-    # ax.plot(times / 3600, ants96_temps_norm_edge[:, 1:], color="black", linestyle="-")
-    # # std = np.mean(np.std(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm, axis=1))
-    # # ax.text(3.7, 9000, f"relative std total = {std*100:.3g}%", fontsize=base_fontsize, color='blue',
-    # #         bbox=dict(facecolor='white', alpha=0.5))
-    # std_inner = np.mean(np.std(ants96_temps_norm_inner, axis=1) / np.mean(ants96_temps_norm_inner, axis=1))
-    # ax.text(3.7, 9000, f"relative std inner = {std_inner*100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # std_edge = np.mean(np.std(ants96_temps_norm_edge, axis=1) / np.mean(ants96_temps_norm_edge, axis=1))
-    # ax.text(3.7, 8500, f"relative std edge = {std_edge*100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # ax.set_title('96 LBA antennas (x polarization)')
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Antenna temperature (K)')
-    # ax.legend(loc="lower right")
-    # if save_figure:
-    #     plt.savefig(f'results/xpol_anttemp_simulation_origin_check_edge.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/xpol_anttemp_simulation_origin_check_edge.png', dpi=300, facecolor='w')
-    # plt.show()
-
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants_temps_norm_single)
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    # std = np.mean(np.std(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single, axis=1))
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
+    # loc = 10500  # frq = 44.92
+    loc = 5100  # frq = 59
     std = np.sqrt(np.mean(np.var(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single) ** 2))
-    ax.text(4.0, 10500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
+    ax.text(4.0, loc, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case NI, raw', fontsize=base_fontsize)
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
     ax.set_ylabel('Antenna temperature (K)')
+    ax.set_title('Case NI, raw', fontsize=base_fontsize)
+    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors_origin.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_errors_origin.pdf', dpi=300+10, facecolor='w')
         plt.savefig(f'results/xpol_anttemp_errors_origin.png', dpi=300, facecolor='w')
     plt.show()
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(times / 3600, ants_temps_uni_single)
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    # std = np.mean(np.std(ants_temps_uni_single, axis=1) / np.mean(ants_temps_uni_single, axis=1))
-    std = np.sqrt(np.mean(np.var(ants_temps_uni_single, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case NI, Normalized', fontsize=base_fontsize)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Antenna temperature (K)')
-    if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_errors.png', dpi=300, facecolor='w')
-    plt.show()
-
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
+    # fig, ax = plt.subplots(figsize=(12, 8))
     # ax.plot(times / 3600, ants_temps_uni_single)
+    # ax.plot(times / 3600, ants_temps_uni_iso, color='black')
+    # std = np.sqrt(np.mean(np.var(ants_temps_uni_single, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+    # ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
+    #         bbox=dict(facecolor='white', alpha=0.))
+    # ax.set_xlim(0, 24)
+    # ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    # ax.set_xlabel('Time over 24h')
+    # ax.set_ylabel('Antenna temperature (K)')
+    # ax.set_title('Case NI, Normalized', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    # if save_figure:
+    #     plt.savefig(f'results/xpol_anttemp_errors.pdf', dpi=300, facecolor='w')
+    #     plt.savefig(f'results/xpol_anttemp_errors.png', dpi=300, facecolor='w')
+    # plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants_temps_uni_single_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
     ax.plot(times / 3600, ants_temps_uni_single_inner[:, 1:], color="#0072B2", linestyle="--")
     ax.plot(times / 3600, ants_temps_uni_single_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants_temps_uni_single_edge[:, 1:], color="#E69F00", linestyle="-")
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    # std = np.mean(np.std(ants_temps_uni_single, axis=1) / np.mean(ants_temps_uni_single, axis=1))
-    # ax.text(3.8, 9200, f"relative std total = {std * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # std_inner = np.mean(np.std(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single, axis=1))
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
+    # loc = [9300, 8900]  # frq = 44.92
+    loc = [5200, 4900]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    ax.text(1.8, 9300, f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
+    ax.text(1.8, loc[0], f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
-    # std_edge = np.mean(np.std(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single, axis=1))
     std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    ax.text(1.8, 8900, f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
+    ax.text(1.8, loc[1], f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
             bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case NI, Normalized (Inner/Edge)', fontsize=base_fontsize)
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
     ax.set_ylabel('Antenna temperature (K)')
+    ax.set_title('Case NI, Normalized', fontsize=base_fontsize)
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
         plt.savefig(f'results/xpol_anttemp_errors_check_edge.pdf', dpi=300, facecolor='w')
         plt.savefig(f'results/xpol_anttemp_errors_check_edge.png', dpi=300, facecolor='w')
     plt.show()
 
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # # ax.plot(times / 3600, ants_temps_uni_single)
-    # ax.plot(times / 3600, ants_temps_uni_single_inner[:, 0], color="#E69F00", linestyle="--", label='inner elements')
-    # ax.plot(times / 3600, ants_temps_uni_single_inner[:, 1:], color="#E69F00", linestyle="--")
-    # ax.plot(times / 3600, ants_temps_uni_single_edge[:, 0], color="black", linestyle="-", label='edge elements')
-    # ax.plot(times / 3600, ants_temps_uni_single_edge[:, 1:], color="black", linestyle="-")
-    # mean_vals = np.mean(ants_temps_uni_single, axis=1)
-    # deviations = ants_temps_uni_single_inner - mean_vals[:, np.newaxis]
-    # squared_deviations = deviations ** 2
-    # variance_vals = np.mean(squared_deviations, axis=1)
-    # std_inner = np.sqrt(np.mean(variance_vals / np.mean(ants_temps_uni_single) ** 2))
-    # ax.text(3.8, 9200, f"relative std inner = {std_inner * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # mean_vals = np.mean(ants_temps_uni_single, axis=1)
-    # deviations = ants_temps_uni_single_edge - mean_vals[:, np.newaxis]
-    # squared_deviations = deviations ** 2
-    # variance_vals = np.mean(squared_deviations, axis=1)
-    # std_edge = np.sqrt(np.mean(variance_vals / np.mean(ants_temps_uni_single) ** 2))
-    # ax.text(3.8, 8800, f"relative std edge = {std_edge * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # ax.set_title('96 isolated antennas with errors (x polarization)')
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Antenna temperature (K)')
-    # ax.legend(loc="lower right")
-    # if save_figure:
-    #     plt.savefig(f'results/xpol_anttemp_errors_check_edge2.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/xpol_anttemp_errors_check_edge2.png', dpi=300, facecolor='w')
-    # plt.show()
+    ref = np.mean(ants_temps_uni_iso)
 
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # # ax.plot(times / 3600, ants_temps_norm_single)
-    # ax.plot(times / 3600, ants_temps_norm_single_inner[:, 0], color="#E69F00", linestyle="--", label='inner elements')
-    # ax.plot(times / 3600, ants_temps_norm_single_inner[:, 1:], color="#E69F00", linestyle="--")
-    # ax.plot(times / 3600, ants_temps_norm_single_edge[:, 0], color="black", linestyle="-", label='edge elements')
-    # ax.plot(times / 3600, ants_temps_norm_single_edge[:, 1:], color="black", linestyle="-")
-    # # std = np.mean(np.std(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single, axis=1))
-    # # ax.text(4., 10800, f"relative std total = {std*100:.3g}%", fontsize=base_fontsize, color='blue',
-    # #         bbox=dict(facecolor='white', alpha=0.5))
-    # std_inner = np.mean(np.std(ants_temps_norm_single_inner, axis=1) / np.mean(ants_temps_norm_single_inner, axis=1))
-    # ax.text(4., 10800, f"relative std inner = {std_inner * 100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # std_edge = np.mean(np.std(ants_temps_norm_single_edge, axis=1) / np.mean(ants_temps_norm_single_edge, axis=1))
-    # ax.text(4., 10000, f"relative std edge = {std_edge*100:.3g}%", fontsize=base_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.5))
-    # ax.set_title('96 isolated antennas with errors (x polarization)')
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Antenna temperature (K)')
-    # ax.legend(loc="lower right")
-    # if save_figure:
-    #     plt.savefig(f'results/xpol_anttemp_errors_origin_check_edge.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/xpol_anttemp_errors_origin_check_edge.png', dpi=300, facecolor='w')
-    # plt.show()
-
-    base_fontsize2 = 26
-    config = {
-        "font.family": 'Times New Roman',  # 设置字体类型
-        "font.size": base_fontsize2,
-        "mathtext.fontset": 'stix',
-    }
-    rcParams.update(config)
-
-    flags = origin_flags.copy()
-    flags[31] = True
-
+    ratio_data_inner = ref / np.mean(data_interp_norm_2020_inner, axis=1)
+    data_interp_cali_2020_inner = data_interp_norm_2020_inner * ratio_data_inner[:, None]
+    ratio_data_edge = ref / np.mean(data_interp_norm_2020_edge, axis=1)
+    data_interp_cali_2020_edge = data_interp_norm_2020_edge * ratio_data_edge[:, None]
     fig, ax = plt.subplots(figsize=(12, 8))
-    mid = len(times) // 2
-    ax.plot(times[mid:]/3600, (ants61_temps_uni[mid:, :]-ants96_temps_uni[mid:, ~flags])/ants96_temps_uni[mid:, ~flags])
-    ax.set_title(r'The difference between the $\mathbf{dataset\ I}$ and $\mathbf{dataset\ II}$')
-    ax.set_ylim([-0.03, 0.03])
-    ax.set_xlabel('Time over 12h')
-    ax.set_ylabel('Relative difference')
+    ax.plot(lst_grid, data_interp_cali_2020_inner[0, :].T, color="#0072B2", linestyle="--", label='inner elements')
+    ax.plot(lst_grid, data_interp_cali_2020_inner[1:, :].T, color="#0072B2", linestyle="--")
+    ax.plot(lst_grid, data_interp_cali_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(lst_grid, data_interp_cali_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
+    # loc = [9200, 9000]  # frq = 44.92
+    loc = [5500, 5300]  # frq = 59
+    std_inner = np.sqrt(np.mean(np.var(data_interp_cali_2020_inner, axis=0)))
+    ax.text(3, loc[0], f"std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    std_edge = np.sqrt(np.mean(np.var(data_interp_cali_2020_edge, axis=0)))
+    ax.text(3, loc[1], f"std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Auto-correlated power')
+    ax.set_title(r'Case Obs, Calibrated', fontsize=base_fontsize)
+    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation_reldiff.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation_reldiff.png', dpi=300, facecolor='w')
+        plt.savefig(f'results/24hautocorr_norm_calibrated.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/24hautocorr_norm_calibrated.png', dpi=300, facecolor='w')
+    plt.show()
+
+    ants96_sim_inner = ref / np.mean(ants96_temps_uni_inner, axis=0)
+    ants96_temps_cali_inner = ants96_temps_uni_inner * ants96_sim_inner[None, :]
+    ants96_sim_edge = ref / np.mean(ants96_temps_uni_edge, axis=0)
+    ants96_temps_cali_edge = ants96_temps_uni_edge * ants96_sim_edge[None, :]
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(times / 3600, ants96_temps_cali_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
+    ax.plot(times / 3600, ants96_temps_cali_inner[:, 1:], color="#0072B2", linestyle="--")
+    ax.plot(times / 3600, ants96_temps_cali_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(times / 3600, ants96_temps_cali_edge[:, 1:], color="#E69F00", linestyle="-")
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
+    # loc = [9500, 9100]  # frq = 44.92
+    loc = [5200, 5000]  # frq = 59
+    std_inner = np.sqrt(np.mean(np.var(ants96_temps_cali_inner, axis=1)))
+    ax.text(1.7, loc[0], f"relative std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    std_edge = np.sqrt(np.mean(np.var(ants96_temps_cali_edge, axis=1)))
+    ax.text(1.7, loc[1], f"relative std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    ax.set_title('Case MC, Calibrated', fontsize=base_fontsize)
+    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_simulation_calibrated.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_simulation_calibrated.png', dpi=300, facecolor='w')
+    plt.show()
+
+    ants_sim_inner = ref / np.mean(ants_temps_uni_single_inner, axis=0)
+    ants_temps_uni_cali_inner = ants_temps_uni_single_inner * ants_sim_inner[None, :]
+    ants_sim_edge = ref / np.mean(ants_temps_uni_single_edge, axis=0)
+    ants_temps_uni_cali_edge = ants_temps_uni_single_edge * ants_sim_edge[None, :]
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(times / 3600, ants_temps_uni_cali_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
+    ax.plot(times / 3600, ants_temps_uni_cali_inner[:, 1:], color="#0072B2", linestyle="--")
+    ax.plot(times / 3600, ants_temps_uni_cali_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(times / 3600, ants_temps_uni_cali_edge[:, 1:], color="#E69F00", linestyle="-")
+    ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
+    # loc = [9300, 8900]  # frq = 44.92
+    loc = [5100, 4800]  # frq = 59
+    std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_cali_inner, axis=1)))
+    ax.text(1.8, loc[0], f"relative std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_cali_edge, axis=1)))
+    ax.text(1.8, loc[1], f"relative std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    ax.set_title('Case NI, Calibrated', fontsize=base_fontsize)
+    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_errors_calibrated.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_errors_calibrated.png', dpi=300, facecolor='w')
+    plt.show()
+
+    data_stack = np.vstack((data_interp_cali_2020_inner, data_interp_cali_2020_edge))
+    data_mean = np.mean(data_stack, axis=0)
+    resi_data_inner = data_interp_cali_2020_inner - data_mean[None, :]
+    resi_data_edge = data_interp_cali_2020_edge - data_mean[None, :]
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(lst_grid, resi_data_inner[0, :].T, color="#0072B2", linestyle="--", label='inner elements')
+    ax.plot(lst_grid, resi_data_inner[1:, :].T, color="#0072B2", linestyle="--")
+    ax.plot(lst_grid, resi_data_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(lst_grid, resi_data_edge[1:, :].T, color="#E69F00", linestyle="-")
+    std_inner = np.sqrt(np.mean(np.var(resi_data_inner, axis=0)))
+    # loc = [300, 250]  # frq = 44.92
+    loc = [300, 250]  # frq = 59
+    ax.text(3, loc[0], f"std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    std_edge = np.sqrt(np.mean(np.var(resi_data_edge, axis=0)))
+    ax.text(3, loc[1], f"std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Auto-correlated power')
+    ax.set_title(r'Residuals of Case Obs, Calibrated', fontsize=base_fontsize)
+    ax.legend(loc="lower left", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(0, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    if save_figure:
+        plt.savefig(f'results/24hautocorr_calibrated_resi.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/24hautocorr_calibrated_resi.png', dpi=300, facecolor='w')
+    plt.show()
+
+    ants96_temps_stack = np.hstack((ants96_temps_cali_inner, ants96_temps_cali_edge))
+    ants96_temps_mean = np.mean(ants96_temps_stack, axis=1)
+    resi_ants96_temps_inner = ants96_temps_cali_inner - ants96_temps_mean[:, None]
+    resi_ants96_temps_edge = ants96_temps_cali_edge - ants96_temps_mean[:, None]
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(times / 3600, resi_ants96_temps_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
+    ax.plot(times / 3600, resi_ants96_temps_inner[:, 1:], color="#0072B2", linestyle="--")
+    ax.plot(times / 3600, resi_ants96_temps_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(times / 3600, resi_ants96_temps_edge[:, 1:], color="#E69F00", linestyle="-")
+    # loc = [110, 80]  # frq = 44.92
+    loc = [65, 50]  # frq = 59
+    std_inner = np.sqrt(np.mean(np.var(resi_ants96_temps_inner, axis=1)))
+    ax.text(1.7, loc[0], f"relative std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    std_edge = np.sqrt(np.mean(np.var(resi_ants96_temps_edge, axis=1)))
+    ax.text(1.7, loc[1], f"relative std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    ax.set_title('Residuals of Case MC, Calibrated', fontsize=base_fontsize)
+    ax.legend(loc="lower left", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(0, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_simulation_calibrated_resi.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_simulation_calibrated_resi.png', dpi=300, facecolor='w')
+    plt.show()
+
+    ants_temps_uni_stack = np.hstack((ants_temps_uni_cali_inner, ants_temps_uni_cali_edge))
+    ants_temps_uni_mean = np.mean(ants_temps_uni_stack, axis=1)
+    resi_ants_temps_uni_inner = ants_temps_uni_cali_inner - ants_temps_uni_mean[:, None]
+    resi_ants_temps_uni_edge = ants_temps_uni_cali_edge - ants_temps_uni_mean[:, None]
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(times / 3600, resi_ants_temps_uni_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
+    ax.plot(times / 3600, resi_ants_temps_uni_inner[:, 1:], color="#0072B2", linestyle="--")
+    ax.plot(times / 3600, resi_ants_temps_uni_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(times / 3600, resi_ants_temps_uni_edge[:, 1:], color="#E69F00", linestyle="-")
+    std_inner = np.sqrt(np.mean(np.var(resi_ants_temps_uni_inner, axis=1)))
+    # loc = [20, 15]  # frq = 44.92
+    loc = [16, 13]  # frq = 59
+    ax.text(1.8, loc[0], f"relative std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    std_edge = np.sqrt(np.mean(np.var(resi_ants_temps_uni_edge, axis=1)))
+    ax.text(1.8, loc[1], f"relative std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
+            bbox=dict(facecolor='white', alpha=0.))
+    ax.set_xlim(0, 24)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    ax.set_xlabel('Time over 24h')
+    ax.set_ylabel('Antenna temperature (K)')
+    ax.set_title('Residuals of Case NI, Calibrated', fontsize=base_fontsize)
+    ax.legend(loc="lower left", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(0, 0))
+    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    if save_figure:
+        plt.savefig(f'results/xpol_anttemp_errors_calibrated_resi.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/xpol_anttemp_errors_calibrated_resi.png', dpi=300, facecolor='w')
     plt.show()
 
 
@@ -1096,12 +1083,118 @@ def power_diff():
             plt.show()
 
 
+def resi_spectrum():
+    save_figure = False
+
+    ds = np.load(raw_data_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+    freqs_mhz = ds['frequencies'] / 1e6
+    # freq_channel = np.argmin(np.abs(freqs_MHz - 44.92))
+    # # files = ds.files()  # heads
+    # print(freq_channel)
+
+    num_channels = len(freqs_mhz)
+
+    std_inner_spectrum = []
+    std_edge_spectrum = []
+    vis_mean_spectrum = []
+    for f_index in range(num_channels):
+
+        # if f_index >= 50:
+        #     break
+
+        print(f_index)
+
+        edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
+        inner_elems = [i for i in range(96) if i not in edge_elems]
+
+        num_grids = 144
+        polar = 'X'
+        base_time_2020 = '2020-12-02 11:58:39.000'
+
+        data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
+        times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
+
+        location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
+        times_2020.location = location
+
+        lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
+        if num_grids == len(lst_2020):
+            loc_start = np.where(lst_2020 == np.min(lst_2020))[0][0]
+            lst_grid = np.zeros_like(lst_2020)
+            lst_grid[:len(lst_2020) - loc_start] = lst_2020[loc_start:]
+            lst_grid[len(lst_2020) - loc_start:] = lst_2020[:loc_start]
+        else:
+            lst_grid = np.linspace(0, 24, num_grids)
+        interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
+        data_interp_2020 = interp_2020(lst_grid)
+
+        ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
+        data_interp_norm_2020 = data_interp_2020 * ks_2020[:, None]
+        # data_interp_2020_edge = data_interp_2020[edge_elems, :]
+        # data_interp_2020_inner = data_interp_2020[inner_elems, :]
+        data_interp_norm_2020_edge = data_interp_norm_2020[edge_elems, :]
+        data_interp_norm_2020_inner = data_interp_norm_2020[inner_elems, :]
+
+        std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+        std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+        std_inner_spectrum.append(std_inner)
+        std_edge_spectrum.append(std_edge)
+        vis_mean = np.mean(data_interp_norm_2020)
+        vis_mean_spectrum.append(vis_mean)
+
+    std_inner_spectrum = np.array(std_inner_spectrum)
+    std_edge_spectrum = np.array(std_edge_spectrum)
+    vis_mean_spectrum = np.array(vis_mean_spectrum)
+
+    base_fontsize = 26
+    legend_fontsize = base_fontsize
+    text_fontsize = base_fontsize
+    config = {
+        "font.family": 'Times New Roman',  # 设置字体类型
+        "font.size": base_fontsize,
+        "mathtext.fontset": 'stix',
+    }
+    rcParams.update(config)
+
+    print(std_inner_spectrum[230], std_edge_spectrum[230])
+    ch_low = np.argmin(np.abs(freqs_mhz - 30))
+    ch_high = np.argmin(np.abs(freqs_mhz - 80))
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(freqs_mhz[ch_low:ch_high+1], std_inner_spectrum[ch_low:ch_high+1] * 100, label='Inner')
+    ax.plot(freqs_mhz[ch_low:ch_high+1], std_edge_spectrum[ch_low:ch_high+1] * 100, label='Edge')
+    # ax.axvline(x=59)
+    ax.set_xlabel('Frequency [MHz]')
+    ax.set_ylabel('Relative Standard Deviation [%]')
+    ax.set_ylim([-0.1, 3.1])
+    # ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    ax.legend()
+    if save_figure:
+        plt.savefig(f'results/1.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/1.png', dpi=300, facecolor='w')
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(freqs_mhz[ch_low:ch_high+1], vis_mean_spectrum[ch_low:ch_high+1] * 100)
+    ax.set_xlabel('Frequency [MHz]')
+    ax.set_ylabel('Mean auto-correlated power')
+    # ax.set_ylim([-0.1, 3.1])
+    # ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    ax.legend()
+    if save_figure:
+        plt.savefig(f'results/2.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/2.png', dpi=300, facecolor='w')
+    plt.show()
+
+
 if __name__ == '__main__':
     # power_antenna()
     # auto_corr_data()
     # lofar_layout()
     # imp_ants()
     comp_power()
-    # power_simulation()
     # power_diff()
+    # resi_spectrum()
     pass
