@@ -68,3 +68,4 @@ results
 
 # 临时忽略
 tmp/
+logs/
