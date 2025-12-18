@@ -1,10 +1,10 @@
 import numpy as np
 import matplotlib as mpl
+mpl.use('AGG')
 from matplotlib import rcParams
 from matplotlib import pyplot as plt
 import pandas as pd
-from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire,
-                  ExecutionBlock, RadPatternSpec, EEPdata)
+from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire, ExecutionBlock, RadPatternSpec, EEPdata)
 from time import time
 # from pygdsm import GlobalSkyModel16, GSMObserver16, GlobalSkyModel, GSMObserver, LowFrequencySkyModel, LFSMObserver
 from pygdsm import LowFrequencySkyModel, LFSMObserver
@@ -14,53 +14,38 @@ from tqdm import tqdm
 from astropy.time import Time
 from astropy.coordinates import EarthLocation, Longitude
 import astropy.units as u
+from astropy.constants import c
 from scipy.interpolate import SmoothSphereBivariateSpline, interp1d
+import sys
 
 
 np.set_printoptions(precision=4, linewidth=80)
+channel = sys.argv[1]
 root_path = '../data/'
 
 
-def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, special=None):
+def simulate_lofar(frq_start, frq_end=None, xpol=True, ypol=True, excite='X', ground=True, special=None):
     """
     Args:
         excite (str): It must be 'X' or 'Y'.
     """
     if excite not in ['X', 'Y']:
         raise ValueError('Invalid param: "polar" must be "X" or "Y".')
+    print('Start ...')
 
+    # Save or not
+    mark_start = frq_start
+    if frq_end is None:
+        mark_end = 0
+    else:
+        mark_end = frq_end
     save_necfile = False
     save_imp = True
     save_figure = True
     save_figure_data = True
     save_EEP = True
-    seed = 42
 
-    # ------------------------------------------------------------------------------------------------------- #
-    f_index = 230
-    ds = np.load(root_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
-    # files = ds.files()  # heads
-    times = ds['delta_secs'][:, 0]
-    data = np.zeros((192, len(times)))
-    print(f'Structure of ds: {ds.files}')
-    for i in range(len(times)):
-        data[:, i] = ds[f'arr_{i}'][0, f_index, :]
-    data = data[0::2, :]
-    # bad antennas
-    flag = np.min(data, axis=1) < 1.e7
-    del ds, times, data, i
-
-    ext_thinwire = True
-    arr_origin = np.loadtxt(root_path + 'Pos_LBA_SE607_local.txt', dtype=str)
-    arr_pos = arr_origin[:, 1:3].astype(float)
-    arr_x = arr_pos[:, 0] * 1
-    arr_y = arr_pos[:, 1] * 1
-    arr_z = np.zeros(len(arr_x))
-    arr_pos = np.vstack((arr_x, arr_y, arr_z)).T
-    arr_pos = arr_pos[~flag, :]
-    num_ants = arr_pos.shape[0]
-    # ------------------------------------------------------------------------------------------------------- #
-
+    # Antenna params
     puck_width = 0.090
     puck_height = 1.6
     ant_arm_len = 1.38  # the length of one stick
@@ -68,11 +53,42 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     wire_radius = 0.001 * 1
     sep = 2.5 * wire_radius
 
+    ds = np.load(root_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+    freqs_mhz = ds['frequencies'] / 1e6
+    # Simulation params
+    ext_thinwire = True
+    f_index = np.argmin(np.abs(freqs_mhz - frq_start))
+    frq_cntr = freqs_mhz[f_index]
+    if frq_end is None:
+        nr_freqs = 1
+        step_freq = 1.0
+    else:
+        f_index_end = np.argmin(np.abs(freqs_mhz - frq_end))
+        nr_freqs = f_index_end - f_index + 1
+        step_freq = freqs_mhz[f_index + 1] - freqs_mhz[f_index]
+    nr_thetas = 46
+    step_theta = 2.0
+    nr_phis = 180
+    step_phi = 2.0
+    segmentalize = 101  # 101
+
+    # input impedance(s)
+    input_imp = 5.6-236.7j
+
+    arr_origin = np.loadtxt(root_path + 'Pos_LBA_SE607_local.txt', dtype=str)
+    arr_pos = arr_origin[:, 1:3].astype(float)
+    arr_x = arr_pos[:, 0] * 1
+    arr_y = arr_pos[:, 1] * 1
+    arr_z = np.zeros(len(arr_x))
+    arr_pos = np.vstack((arr_x, arr_y, arr_z)).T
+    num_ants = arr_pos.shape[0]
+
     model_name = __file__.replace('.py', '')
     lba_model = ArrayModel(model_name)
     lba_model.set_commentline(lba_model.name)
     lba_model.set_commentline('Author: T. Liu')
-    lba_model.set_commentline('Date: 2025-05-02')
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    lba_model.set_commentline(f'Date: {today_str}')
 
     element = []
     if xpol:
@@ -114,11 +130,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
             _port_ex = ('LNA_Y', VoltageSource(1.0))
     lba_model.arrayify(element=element, array_positions=arr_pos)
 
-    nr_freqs = 1
-    nr_thetas = 46
-    nr_phis = 180
-    segmentalize = 101
-    _frq_cntr_step = FreqSteps('lin', nr_freqs, frq_cntr, 2.0)
+    _frq_cntr_step = FreqSteps('lin', nr_freqs, frq_cntr, step_freq)
     lba_model.segmentalize(segmentalize, frq_cntr)
     if ground:
         lba_model.set_ground()
@@ -129,7 +141,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
         if lba_model['ant_Y']['puck_Y'].nr_seg < 3:
             lba_model['ant_Y']['puck_Y'].nr_seg = 3
     nr_ants = len(arr_pos)
-    _epl = RadPatternSpec(nth=nr_thetas, dth=2., nph=nr_phis, dph=2.)
+    _epl = RadPatternSpec(nth=nr_thetas, dth=step_theta, nph=nr_phis, dph=step_phi)
     eb_arr = ExecutionBlock(_frq_cntr_step, _port_ex, _epl, ext_thinwire=ext_thinwire)
     diag_segs = lba_model.seglamlens(_frq_cntr_step)
     lba_model.add_executionblock('exec', eb_arr)
@@ -137,9 +149,9 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
     s = time()
     eepSCdat = lba_model.excite_1by1(eb_arr, save_necfile=save_necfile)
     e = time()
-    print(e - s)
+    print(f'"lba_model.excite_1by1()" spent %02f seconds.' % (e - s))
     eepOCdat = eepSCdat.transform_to('OC')
-    eepNOdat = eepSCdat.transform_to('NO', imp_load=np.diag(np.ones(nr_ants, dtype=complex)*(5.6-236.7j)))
+    eepNOdat = eepSCdat.transform_to('NO', imp_load=np.diag(np.ones(nr_ants, dtype=complex)*(input_imp)))
     # print(_epl.as_thetaphis())
     eelOCdat = eepOCdat.get_EELs()
     eepdat = eepOCdat
@@ -150,22 +162,19 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
         prefix = f'dual_{excite.lower()}pol_{num_ants}'
     else:
         prefix = f'dual_{excite.lower()}pol_{num_ants}_{special}'
-    print(11111, prefix)
 
     if save_imp:
-        np.save(f'results/{prefix}_f{frq_cntr}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_imp.npy', Z)
+        np.save(f'results/{prefix}_f{mark_start}_f{mark_end}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_imp.npy', Z)
 
     # N (antennas) * N (frequencies) * N (thetas) * N (phis) * N (polarizations)
     EEP = eepNOdat.get_antspats_arr()
     print(np.shape(EEP))
     if save_EEP:
-        np.save(f'results/{prefix}_f{frq_cntr}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_EEP.npy', EEP)
+        np.save(f'results/{prefix}_f{mark_start}_f{mark_end}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_EEP.npy', EEP)
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(np.arange(num_ants), np.diag(np.real(Z[0, :, :])))
     plt.show()
-    # # import sys
-    # # sys.exit()
 
     if True:
         eelscdat = eepSCdat.get_EELs()
@@ -187,7 +196,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
             hno_abs = np.append(hno_abs, hno_abs_ants[0, 0, 0])
 
         if save_figure_data:
-            np.save(f'results/{prefix}_f{frq_cntr}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_figure_data.npy', np.vstack((Hsc_abs, hoc_abs, hno_abs)))
+            np.save(f'results/{prefix}_f{mark_start}_f{mark_end}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_figure_data.npy', np.vstack((Hsc_abs, hoc_abs, hno_abs)))
 
         #### Plot the results
         ants = np.arange(nr_ants)
@@ -209,7 +218,7 @@ def simulate_lofar(frq_cntr, xpol=True, ypol=True, excite='X', ground=True, spec
         ax.legend(loc='best')
         plt.tick_params(labelsize=base_fontsize)
         if save_figure:
-            plt.savefig(f'results/{prefix}_f{frq_cntr}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_lofar_eels.eps', dpi=300, facecolor='w')
+            plt.savefig(f'results/{prefix}_f{mark_start}_f{mark_end}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_lofar_eels.eps', dpi=300, facecolor='w')
         plt.show()
 
     return Z
@@ -1581,12 +1590,17 @@ def power_simulation():
     return
 
 
-def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, excite='X', ground=True):
+def _random_antenna(
+        nr_samples, frq_cntr, nr_freqs=1, frq_step=1.0, rel_std=0.01, xpol=True, ypol=True, excite='X', ground=True,
+        save_necfile=False, input_imp=5.6-236.7j
+):
     seed = 42
-    nr_freqs = 1
     nr_thetas = 46
+    step_theta = 2.0
     nr_phis = 180
+    step_phi = 2.0
     segmentalize = 101
+    ext_thinwire = True
 
     wire_radius = 0.001
     sep = 2.5 * wire_radius
@@ -1618,8 +1632,6 @@ def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, ex
             px3 = (np.cos(np.deg2rad(45)) * params[0, i] / 2, np.sin(np.deg2rad(45)) * params[0, i] / 2, params[1, i])
             px4 = (np.cos(np.deg2rad(45)) * (params[3, i] + params[0, i] / 2),
                    np.sin(np.deg2rad(45)) * (params[3, i] + params[0, i] / 2), params[1, i] - params[3, i])
-            # px3 = (-px2[0], -px2[1], px2[2])
-            # px4 = (-px1[0], -px1[1], px1[2])
             lx12 = (px1, px2)
             lx23 = (px2, px3)
             lx34 = (px3, px4)
@@ -1643,8 +1655,6 @@ def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, ex
                 params[1, i] + sep)
             py4 = (np.sin(np.deg2rad(45)) * (params[5, i] + params[0, i] / 2),
                    -np.cos(np.deg2rad(45)) * (params[5, i] + params[0, i] / 2), params[1, i] - params[5, i] + sep)
-            # py3 = (-py2[0], -py2[1], py2[2])
-            # py4 = (-py1[0], -py1[1], py1[2])
             ly12 = (py1, py2)
             ly23 = (py2, py3)
             ly34 = (py3, py4)
@@ -1658,35 +1668,41 @@ def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, ex
                 _port_ex = ('LNA_Y', VoltageSource(1.0))
         lba_model.arrayify(element=element, array_positions=np.array([[0, 0, 0]]))
 
-        _frq_cntr_step = FreqSteps('lin', nr_freqs, frq_cntr, 2.0)
+        _frq_cntr_step = FreqSteps('lin', nr_freqs, frq_cntr, frq_step)
+        frqlist = _frq_cntr_step.aslist()
         lba_model.segmentalize(segmentalize, frq_cntr)
         if ground:
             lba_model.set_ground()
         if xpol:
-            if lba_model['ant_X']['puck_X'].nr_seg < 11:
-                lba_model['ant_X']['puck_X'].nr_seg = 11
+            if lba_model['ant_X']['puck_X'].nr_seg < 3:  # 11
+                lba_model['ant_X']['puck_X'].nr_seg = 3  # 11
         if ypol:
-            if lba_model['ant_Y']['puck_Y'].nr_seg < 11:
-                lba_model['ant_Y']['puck_Y'].nr_seg = 11
-        _epl = RadPatternSpec(nth=nr_thetas, dth=2., nph=nr_phis, dph=2.)
-        eb_arr = ExecutionBlock(_frq_cntr_step, _port_ex, _epl)
-        # diag_segs = lba_model.seglamlens(_frq_cntr_step)
+            if lba_model['ant_Y']['puck_Y'].nr_seg < 3:  # 11
+                lba_model['ant_Y']['puck_Y'].nr_seg = 3  # 11
+        _epl = RadPatternSpec(nth=nr_thetas, dth=step_theta, nph=nr_phis, dph=step_phi)
+        eb_arr = ExecutionBlock(_frq_cntr_step, _port_ex, _epl, ext_thinwire=ext_thinwire)
+        diag_segs = lba_model.seglamlens(_frq_cntr_step)
         lba_model.add_executionblock('exec', eb_arr)
-        # diag_thin = lba_model.segthinness()
-        eepSCdat = lba_model.excite_1by1(eb_arr, save_necfile=False)
-        eepNOdat = eepSCdat.transform_to('NO', imp_load=np.diag(np.ones(1, dtype=complex) * (5.6 - 236.7j)))
+        diag_thin = lba_model.segthinness()
+        eepSCdat = lba_model.excite_1by1(eb_arr, save_necfile=save_necfile)
+        eepNOdat = eepSCdat.transform_to('NO', imp_load=np.diag(np.ones(1, dtype=complex) * input_imp))
         # eepOCdat = eepSCdat.transform_to('OC')
         # eepNOdat = eepSCdat.transform_to('NO', imp_load=np.diag(np.ones(nr_ants, dtype=complex)*(5.6-236.7j)))
         # # print(_epl.as_thetaphis())
         # eelOCdat = eepOCdat.get_EELs()
         # eepdat = eepOCdat
-        Z = eepSCdat.get_impedances()
+        Z = eepSCdat.get_impedances()  # TODO: It is from eepSCdat, but "Z" in "simulate_lofar()" is from eepOCdat.
         EEP = eepNOdat.get_antspats_arr()
         EEPs.append(EEP[0, :, :, :, :])
         EEL = eepNOdat.get_EELs().eels[0]
         EELs.append(EEL)
         imps[i] = Z[0, 0, 0]
     EEPs = np.array(EEPs)
+
+    # print(lba_model['ant_X']['+X'].get_nrssegments())
+    print(f'lba_model[\'ant_X\'].get_nrsegments() is {lba_model["ant_X"].get_nrsegments()}')
+
+    return EEPs, EELs, imps, frqlist
 
     return EEPs, EELs, imps
 
@@ -2227,7 +2243,7 @@ def vis_simu():
 
     timings = 144
     corss_vis = np.zeros((timings, nr_ants - 1), dtype=complex)
-    for t in tqdm(range(timings), desc='Observing'):
+    for t in range(timings):
         (latitude, longitude, elevation) = (str(lat), str(lon), 0)
         # ov = LFSMObserver()
         ov = GSMObserver()
@@ -2377,248 +2393,193 @@ def comp_vis():
 def power_simulation2():
     # LOFAR: x to east (several degrees difference), y to north (several degrees difference), z to up
     # healpix: x to up, y to east, z to north
-    save_figure = False
     save = True
     data_path = './figures_thesis_materials/'
     output_path = './figures_paper_materials/'
 
-    # frq = 44.92
-    frq = 59
-    nside = 256  # at least 256 to avoid repetition of pixels
-    lon = 11.917778
-    lat = 57.393056
-    # f_index = 230
+    ds = np.load(root_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+    freqs_mhz = ds['frequencies'] / 1e6
+    ch_low = np.argmin(np.abs(freqs_mhz - 30))
+    ch_high = np.argmin(np.abs(freqs_mhz - 80))
 
-    nr_thetas = 46
-    nr_phis = 180
-    thetas = np.linspace(0, 90, nr_thetas, endpoint=True) * np.pi / 180
-    phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
+    ch_list = np.arange(ch_low+2, ch_high, 3)
+    for ch in ch_list:
+        print(ch_low, ch, ch_high)
+        # frq = 44.92
+        frq = freqs_mhz[ch]
+        nside = 256  # at least 256 to avoid repetition of pixels
+        lon = 11.917778
+        lat = 57.393056
+        # f_index = 230
+    
+        nr_thetas = 46
+        nr_phis = 180
+        thetas = np.linspace(0, 90, nr_thetas, endpoint=True) * np.pi / 180
+        phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
+    
+        eep96 = np.load(f'{data_path}dual_xpol_96_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
+        # _1, _2, origin_flags = _load_data(2, f_index, 'X')
+        # index_invalid = np.sum(~origin_flags[:31])
+        # eep61 = np.load(f'{data_path}dual_xpol_62_broken_f44.92_s101_numa62_EEP.npy')[:, 0, :, :, :]
+        # eep61 = np.delete(eep61, index_invalid, axis=0)
+    
+        eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
+        eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))
+        eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))
+        _, beam960 = _ant_coord_trans(nside, thetas, phis, eep96[0, :, :].T)
+        # eep61 = np.abs(eep61[:, :, :, 0]) ** 2 + np.abs(eep61[:, :, :, 1]) ** 2
+        # eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
+    
+        nr_samples = 96
+        EEPs, _, imps = _random_antenna(nr_samples, frq)
+        EEPs = np.abs(EEPs[:, 0, :, :, 0]) ** 2 + np.abs(EEPs[:, 0, :, :, 1]) ** 2
+        EEPs_uni_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
+        EEPs_norm_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
+        _, beam0_single = _ant_coord_trans(nside, thetas, phis, EEPs[0, :, :].T)
+    
+        EEP_iso, _, imps = _random_antenna(1, frq, rel_std=0.)
+        EEP_iso = np.abs(EEP_iso[:, 0, :, :, 0]) ** 2 + np.abs(EEP_iso[:, 0, :, :, 1]) ** 2
+        _, beam_iso = _ant_coord_trans(nside, thetas, phis, EEP_iso[0, :, :].T)
+        beam_uni_iso = beam_iso / np.sum(beam_iso)
+    
+        for i in range(96):
+            _, beam = _ant_coord_trans(nside, thetas, phis, eep96[i, :, :].T)
+            _, beam_single = _ant_coord_trans(nside, thetas, phis, EEPs[i, :, :].T)
+            beam_uni = beam / np.sum(beam)
+            beam_norm = beam / np.sum(beam960)
+            beam_uni_single = beam_single / np.sum(beam_single)
+            beam_norm_single = beam_single / np.sum(beam0_single)
+            eep96_uni_healpix[i, :] = beam_uni
+            eep96_norm_healpix[i, :] = beam_norm
+            EEPs_uni_single_healpix[i, :] = beam_uni_single
+            EEPs_norm_single_healpix[i, :] = beam_norm_single
+    
+        times = np.linspace(0, 24 * 3600, 1000, endpoint=False)
+        base_time = '2020-12-02 11:58:39.000'
+        times = Time(base_time, format='iso', scale='utc') + times * u.second
+        location = EarthLocation(lon=lon * u.deg, lat=lat * u.deg)
+        times.location = location
+        lst = times.sidereal_time('mean').hour  # Transform to sidereal time
+        base_time = times.datetime[np.where(lst == np.min(lst))[0]][0]
+    
+        n_samples = 144
+        # times = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
+        time_offsets = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
+        times = np.array([base_time + timedelta(seconds=s) for s in time_offsets])
+        # time_step = 1400 // n_samples
+        ants96_temps_uni = np.zeros((n_samples, 96))
+        ants96_temps_norm = np.zeros((n_samples, 96))
+        ants_temps_uni_single = np.zeros((n_samples, nr_samples))
+        ants_temps_norm_single = np.zeros((n_samples, nr_samples))
+        ants_temps_uni_iso = np.zeros(n_samples)
+        for i, t in enumerate(times):
+            (latitude, longitude, elevation) = (str(lat), str(lon), 0)
+            ov = LFSMObserver()
+            ov.lon = longitude
+            ov.lat = latitude
+            ov.elev = elevation
+            # minute = (base_time.minute + t * time_step) % 60
+            # hour = (base_time.hour + (base_time.minute + t * time_step) // 60) % 24
+            # day = base_time.day + (base_time.hour + (base_time.minute + t * time_step) // 60) // 24
+            ov.date = datetime(2020, 12, t.day, t.hour, t.minute, t.second)  # ?????????????? base_time.second
+            sky = ov.generate(frq)
+            sky = hp.pixelfunc.ud_grade(sky, nside)
+    
+            obs_uni = sky[None, :] * eep96_uni_healpix
+            obs_norm = sky[None, :] * eep96_norm_healpix
+            obs_uni_single = sky[None, :] * EEPs_uni_single_healpix
+            obs_norm_single = sky[None, :] * EEPs_norm_single_healpix
+            # obs61_uni = sky[None, :] * eep61_uni_healpix
+            obs_uni_iso = sky * beam_uni_iso
+            ant_temp_uni = np.sum(obs_uni, axis=1)
+            ant_temp_norm = np.sum(obs_norm, axis=1)
+            ant_temp_uni_single = np.sum(obs_uni_single, axis=1)
+            ant_temp_norm_single = np.sum(obs_norm_single, axis=1)
+            # ant_temp61_uni = np.sum(obs61_uni, axis=1)
+            ant_temp_uni_iso = np.sum(obs_uni_iso)
+            ants96_temps_uni[i, :] = ant_temp_uni
+            ants96_temps_norm[i, :] = ant_temp_norm
+            ants_temps_uni_single[i, :] = ant_temp_uni_single
+            ants_temps_norm_single[i, :] = ant_temp_norm_single
+            # ants61_temps_uni[t, :] = ant_temp61_uni
+            ants_temps_uni_iso[i] = ant_temp_uni_iso
+    
+        # times, ants96_temps_norm, ants_temps_uni_iso, ants96_temps_uni,
+        # ants_temps_norm_single, ants_temps_uni_single
+        if save:
+            np.savez(f'{output_path}power_simulation_{ch}.npz',
+                     times=times, ants_temps_uni_iso=ants_temps_uni_iso,
+                     ants96_temps_norm=ants96_temps_norm, ants96_temps_uni=ants96_temps_uni,
+                     ants_temps_norm_single=ants_temps_norm_single, ants_temps_uni_single=ants_temps_uni_single)
 
-    eep96 = np.load(f'{data_path}dual_xpol_96_f44.92_s101_numa96_EEP.npy')[:, 0, :, :, :]
-    # _1, _2, origin_flags = _load_data(2, f_index, 'X')
-    # index_invalid = np.sum(~origin_flags[:31])
-    # eep61 = np.load(f'{data_path}dual_xpol_62_broken_f44.92_s101_numa62_EEP.npy')[:, 0, :, :, :]
-    # eep61 = np.delete(eep61, index_invalid, axis=0)
 
-    eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
-    eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))
-    eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))
-    _, beam960 = _ant_coord_trans(nside, thetas, phis, eep96[0, :, :].T)
-    # eep61 = np.abs(eep61[:, :, :, 0]) ** 2 + np.abs(eep61[:, :, :, 1]) ** 2
-    # eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
+def single_antenna_simulation():
+    savefig = False
+    nr_samples = 1
+    frq_cntr = 36.
+    nr_freqs = 55
+    frq_step = 1.0
+    save_necfile = False
+    input_imp = 17. - 215.3j
+    # input_imp = 50
+    eta0 = 377
 
-    nr_samples = 96
-    EEPs, _, imps = _random_antenna(nr_samples, frq)
-    EEPs = np.abs(EEPs[:, 0, :, :, 0]) ** 2 + np.abs(EEPs[:, 0, :, :, 1]) ** 2
-    EEPs_uni_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
-    EEPs_norm_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
-    _, beam0_single = _ant_coord_trans(nside, thetas, phis, EEPs[0, :, :].T)
+    EEPs, EELs, imps, frqlist = _random_antenna(
+        nr_samples, frq_cntr, nr_freqs=nr_freqs, frq_step=frq_step, rel_std=0.0, xpol=True, ypol=True, excite='X',
+        ground=True, save_necfile=save_necfile, input_imp=input_imp
+    )
+    hno = np.sqrt(np.abs(EELs[0].f_tht) ** 2 + np.abs(EELs[0].f_phi) ** 2)
+    print(EEPs.shape)
+    area_eff_zenith = np.real(eta0 * hno[:, 0, 0] ** 2 / (4 * input_imp))
+    print(f'{frqlist[0]} - {frqlist[-1]} MHz')
+    ref1_freq = 36.0
+    index_ref1 = np.where(np.array(frqlist) == ref1_freq)[0][0]
+    print(f'It is {EEPs[0, index_ref1, 0, 0, 0]} at {frqlist[index_ref1]} MHz')
+    ref2_freq = 84.0
+    index_ref2 = np.where(np.array(frqlist) == ref2_freq)[0][0]
+    print(f'It is {EEPs[0, index_ref2, 0, 0, 0]} at {frqlist[index_ref2]} MHz')
+    print(EEPs[0, :, 0, 0, 0])
 
-    EEP_iso, _, imps = _random_antenna(1, frq, rel_std=0.)
-    EEP_iso = np.abs(EEP_iso[:, 0, :, :, 0]) ** 2 + np.abs(EEP_iso[:, 0, :, :, 1]) ** 2
-    _, beam_iso = _ant_coord_trans(nside, thetas, phis, EEP_iso[0, :, :].T)
-    beam_uni_iso = beam_iso / np.sum(beam_iso)
-
-    for i in tqdm(range(96), desc='Generate the beams of the 96-element array and 96 isolated random antennas'):
-        _, beam = _ant_coord_trans(nside, thetas, phis, eep96[i, :, :].T)
-        _, beam_single = _ant_coord_trans(nside, thetas, phis, EEPs[i, :, :].T)
-        beam_uni = beam / np.sum(beam)
-        beam_norm = beam / np.sum(beam960)
-        beam_uni_single = beam_single / np.sum(beam_single)
-        beam_norm_single = beam_single / np.sum(beam0_single)
-        eep96_uni_healpix[i, :] = beam_uni
-        eep96_norm_healpix[i, :] = beam_norm
-        EEPs_uni_single_healpix[i, :] = beam_uni_single
-        EEPs_norm_single_healpix[i, :] = beam_norm_single
-
-    # for i in tqdm(range(61), desc='Generate the beams of the 61-element array'):
-    #     _, beam61 = _ant_coord_trans(nside, thetas, phis, eep61[i, :, :].T)
-        # beam_uni61 = beam61 / np.sum(beam61)
-        # eep61_uni_healpix[i, :] = beam_uni61
-
-    times = np.linspace(0, 24 * 3600, 1000, endpoint=False)
-    base_time = '2020-12-02 11:58:39.000'
-    times = Time(base_time, format='iso', scale='utc') + times * u.second
-    location = EarthLocation(lon=lon * u.deg, lat=lat * u.deg)
-    times.location = location
-    lst = times.sidereal_time('mean').hour  # Transform to sidereal time
-    base_time = times.datetime[np.where(lst == np.min(lst))[0]][0]
-
-    n_samples = 144
-    # times = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
-    time_offsets = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
-    times = np.array([base_time + timedelta(seconds=s) for s in time_offsets])
-    # time_step = 1400 // n_samples
-    ants96_temps_uni = np.zeros((n_samples, 96))
-    ants96_temps_norm = np.zeros((n_samples, 96))
-    ants_temps_uni_single = np.zeros((n_samples, nr_samples))
-    ants_temps_norm_single = np.zeros((n_samples, nr_samples))
-    ants61_temps_uni = np.zeros((n_samples, 61))
-    ants_temps_uni_iso = np.zeros(n_samples)
-    for i, t in enumerate(tqdm(times, desc='Generate the simulated light curves')):
-        (latitude, longitude, elevation) = (str(lat), str(lon), 0)
-        ov = LFSMObserver()
-        ov.lon = longitude
-        ov.lat = latitude
-        ov.elev = elevation
-        # minute = (base_time.minute + t * time_step) % 60
-        # hour = (base_time.hour + (base_time.minute + t * time_step) // 60) % 24
-        # day = base_time.day + (base_time.hour + (base_time.minute + t * time_step) // 60) // 24
-        ov.date = datetime(2020, 12, t.day, t.hour, t.minute, t.second)  # ?????????????? base_time.second
-        sky = ov.generate(frq)
-        sky = hp.pixelfunc.ud_grade(sky, nside)
-
-        obs_uni = sky[None, :] * eep96_uni_healpix
-        obs_norm = sky[None, :] * eep96_norm_healpix
-        obs_uni_single = sky[None, :] * EEPs_uni_single_healpix
-        obs_norm_single = sky[None, :] * EEPs_norm_single_healpix
-        # obs61_uni = sky[None, :] * eep61_uni_healpix
-        obs_uni_iso = sky * beam_uni_iso
-        ant_temp_uni = np.sum(obs_uni, axis=1)
-        ant_temp_norm = np.sum(obs_norm, axis=1)
-        ant_temp_uni_single = np.sum(obs_uni_single, axis=1)
-        ant_temp_norm_single = np.sum(obs_norm_single, axis=1)
-        # ant_temp61_uni = np.sum(obs61_uni, axis=1)
-        ant_temp_uni_iso = np.sum(obs_uni_iso)
-        ants96_temps_uni[i, :] = ant_temp_uni
-        ants96_temps_norm[i, :] = ant_temp_norm
-        ants_temps_uni_single[i, :] = ant_temp_uni_single
-        ants_temps_norm_single[i, :] = ant_temp_norm_single
-        # ants61_temps_uni[t, :] = ant_temp61_uni
-        ants_temps_uni_iso[i] = ant_temp_uni_iso
-
-    edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
-    inner_elems = [i for i in range(96) if i not in edge_elems]
-    ants96_temps_uni_edge = ants96_temps_uni[:, edge_elems]
-    ants96_temps_uni_inner = ants96_temps_uni[:, inner_elems]
-    # ants96_temps_norm_edge = ants96_temps_norm[:, edge_elems]
-    # ants96_temps_norm_inner = ants96_temps_norm[:, inner_elems]
-    ants_temps_uni_single_edge = ants_temps_uni_single[:, edge_elems]
-    ants_temps_uni_single_inner = ants_temps_uni_single[:, inner_elems]
-    # ants_temps_norm_single_edge = ants_temps_norm_single[:, edge_elems]
-    # ants_temps_norm_single_inner = ants_temps_norm_single[:, inner_elems]
-
-    base_fontsize = 26
-    legend_fontsize = base_fontsize
-    text_fontsize = base_fontsize
-    config = {
-        "font.family": 'Times New Roman',  # 设置字体类型
-        "font.size": base_fontsize,
-        "mathtext.fontset": 'stix',
-    }
-    rcParams.update(config)
-
-    # times, ants96_temps_norm, ants_temps_uni_iso, ants96_temps_uni,
-    # ants_temps_norm_single, ants_temps_uni_single
-    if save:
-        np.savez(f'{output_path}power_simulation{frq}.npz',
-                 times=times, ants_temps_uni_iso=ants_temps_uni_iso,
-                 ants96_temps_norm=ants96_temps_norm, ants96_temps_uni=ants96_temps_uni,
-                 ants_temps_norm_single=ants_temps_norm_single, ants_temps_uni_single=ants_temps_uni_single)
-
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(times / 3600, ants96_temps_norm)
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    std = np.sqrt(np.mean(np.var(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm) ** 2))
-    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case MC, Raw', fontsize=base_fontsize)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Antenna temperature (K)')
-    if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation_origin.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation_origin.png', dpi=300, facecolor='w')
+    print(area_eff_zenith)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(frqlist, area_eff_zenith)
+    # ax.plot(frqlist, hno[:, 0, 0] ** 2)
+    ax.set_xlabel('Frequency [MHz]')
+    ax.set_ylabel('Effective Area [m^2]')
+    ax.set_title(f'Isol. LBA Spectrum at Zenith, LNA imp = {input_imp} Ohms')
+    if savefig:
+        plt.savefig(f'results/Isol_LBA_spectrum_zenith_realpart_imp{np.real(input_imp)}.png', dpi=300, facecolor='w')
     plt.show()
+    sys.exit()
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(times / 3600, ants96_temps_uni)
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    std = np.sqrt(np.mean(np.var(ants96_temps_uni, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case MC, Normalized', fontsize=base_fontsize)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Antenna temperature (K)')
-    if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation.png', dpi=300, facecolor='w')
-    plt.show()
+    beam_power = np.abs(EEPs[0, :, :, :, 0]) ** 2 + np.abs(EEPs[0, :, :, :, 1]) ** 2
+    beam_power_max = np.max(beam_power, axis=(1, 2))
+    beam_power /= beam_power_max[:, None, None]
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(times / 3600, ants96_temps_uni_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
-    ax.plot(times / 3600, ants96_temps_uni_inner[:, 1:], color="#0072B2", linestyle="--")
-    ax.plot(times / 3600, ants96_temps_uni_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
-    ax.plot(times / 3600, ants96_temps_uni_edge[:, 1:], color="#E69F00", linestyle="-")
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    std_inner = np.sqrt(np.mean(np.var(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    ax.text(1.7, 9500, f"relative std inner = {std_inner*100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    std_edge = np.sqrt(np.mean(np.var(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    ax.text(1.7, 9100, f"relative std edge = {std_edge*100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case MC, Normalized (Inner/Edge)', fontsize=base_fontsize)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Antenna temperature (K)')
-    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
-    if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation_check_edge.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation_check_edge.png', dpi=300, facecolor='w')
-    plt.show()
+    thetas = np.deg2rad(np.arange(0, 90+2, 2))
+    phis = np.deg2rad(np.arange(0, 360, 2))
+    dtheta = np.deg2rad(2)
+    dphi = np.deg2rad(2)
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(times / 3600, ants_temps_norm_single)
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    std = np.sqrt(np.mean(np.var(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single) ** 2))
-    ax.text(4.0, 10500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case NI, raw', fontsize=base_fontsize)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Antenna temperature (K)')
-    if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors_origin.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_errors_origin.png', dpi=300, facecolor='w')
-    plt.show()
+    theta_grid, phi_grid = np.meshgrid(thetas, phis, indexing='ij')
+    sin_theta = np.sin(theta_grid)
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(times / 3600, ants_temps_uni_single)
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    std = np.sqrt(np.mean(np.var(ants_temps_uni_single, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case NI, Normalized', fontsize=base_fontsize)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Antenna temperature (K)')
-    if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_errors.png', dpi=300, facecolor='w')
-    plt.show()
+    Omega_A = np.zeros(nr_freqs)
+    for i in range(nr_freqs):
+        # beam_power[i] 的 shape = (46,180)
+        Omega_A[i] = np.sum(beam_power[i] * sin_theta) * dtheta * dphi
+    print(Omega_A)
+    print(beam_power[:, 0, 0])
 
-    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    ax.plot(times / 3600, ants_temps_uni_single_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
-    ax.plot(times / 3600, ants_temps_uni_single_inner[:, 1:], color="#0072B2", linestyle="--")
-    ax.plot(times / 3600, ants_temps_uni_single_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
-    ax.plot(times / 3600, ants_temps_uni_single_edge[:, 1:], color="#E69F00", linestyle="-")
-    ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    ax.text(1.8, 9300, f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    ax.text(1.8, 8900, f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
-    ax.set_title('Case NI, Normalized (Inner/Edge)', fontsize=base_fontsize)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Antenna temperature (K)')
-    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
-    if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors_check_edge.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_errors_check_edge.png', dpi=300, facecolor='w')
-    plt.show()
+    # beam_zenith = np.append(beam_zenith, beam_power[0, 0])
+    beam_zenith = beam_power[:, 0, 0]
+    area_eff_zenith = beam_zenith * (c.value * 1e-6 / frqlist) ** 2 / (4 * np.pi)
 
 
 if __name__ == '__main__':
     st = time()
     # arr_layout()
-    # simulate_lofar(frq_cntr=44.92, xpol=True, ypol=True, excite='X', ground=True, special='broken')
+    # simulate_lofar(30, frq_end=None, xpol=True, ypol=False, excite='X', ground=True, special=None)
     # imp_ants()
     # power_antenna()
     # power_time()
@@ -2639,7 +2600,8 @@ if __name__ == '__main__':
     # vis_simu()
     # vis_data()
     # comp_vis()
-    power_simulation2()
+    # power_simulation2()
+    # single_antenna_simulation()
 
     et = time()
     print("time: %.2f seconds" % (et - st))

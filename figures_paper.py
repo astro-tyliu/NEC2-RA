@@ -2,6 +2,8 @@ import sys
 
 import numpy as np
 import matplotlib as mpl
+mpl.use('AGG')
+
 from matplotlib import rcParams
 from matplotlib import pyplot as plt
 import pandas as pd
@@ -221,7 +223,7 @@ def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, ex
 
 
 def power_antenna():
-    save_figure = False
+    save_figure = True
 
     # N(antennas*polarizations) * N(timings) * N(frequencies)
     # polarization - even: x, odd:y
@@ -231,11 +233,6 @@ def power_antenna():
     std = np.std(d, axis=1)
     antennas = np.arange(96)
     print(np.shape(d), np.shape(mean))
-
-    x_pol = mean[::2, :]
-    mean_x = np.mean(x_pol, axis=0)
-    std_x = np.std(x_pol, axis=0)
-    relat_stdx = std_x[f_index] / mean_x[f_index]
 
     base_fontsize = 20
     config = {
@@ -247,67 +244,57 @@ def power_antenna():
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.errorbar(antennas, mean[::2, f_index], yerr=std[::2, f_index], fmt='-o', color='b', ecolor='r', elinewidth=2,
                 capsize=4, capthick=2, markersize=2, linewidth=1)
+    x_pol = mean[::2, :]
+    mean_x = np.mean(x_pol, axis=0)
+    std_x = np.std(x_pol, axis=0)
+    relat_stdx = std_x[f_index] / mean_x[f_index]
     ax.text(70, 1.4e7, f'relative std = {format(relat_stdx, ".2%")}', fontsize=base_fontsize)
     ax.set_title('x polarization')
     ax.set_xlabel('No. antenna')
     ax.set_ylabel('Auto-correlated power')
     if save_figure:
-        plt.savefig(f'results/power_xpol.eps', dpi=300, facecolor='w')
+        plt.savefig(f'results/power_xpol.pdf', dpi=300, facecolor='w')
     plt.show()
-
-    y_pol = np.concatenate((mean[1::2, :][:31], mean[1::2, :][32:]))
-    mean_y = np.mean(y_pol, axis=0)
-    std_y = np.std(y_pol, axis=0)
-    relat_stdy = std_y[f_index] / mean_y[f_index]
 
     fig, ax = plt.subplots(figsize=(12, 8))
     mean[1::2, f_index][31] = np.nan
     ax.errorbar(antennas, mean[1::2, f_index], yerr=std[1::2, f_index], fmt='-o', color='b', ecolor='r', elinewidth=2,
                 capsize=4, capthick=2, markersize=2, linewidth=1)
+    y_pol = np.concatenate((mean[1::2, :][:31], mean[1::2, :][32:]))
+    mean_y = np.mean(y_pol, axis=0)
+    std_y = np.std(y_pol, axis=0)
+    relat_stdy = std_y[f_index] / mean_y[f_index]
     ax.text(70, 1.42e7, f'relative std = {format(relat_stdy, ".2%")}', fontsize=base_fontsize)
     ax.set_title('y polarization')
     ax.set_xlabel('No. antenna')
     ax.set_ylabel('Auto-correlated power')
     if save_figure:
-        plt.savefig(f'results/power_ypol.eps', dpi=300, facecolor='w')
+        plt.savefig(f'results/power_ypol.pdf', dpi=300, facecolor='w')
     plt.show()
 
 
 def auto_corr_data():
     save_figure = True
 
-    num_grids = 2000
-
     f_index = 230  # f = 44.92 MHz
     polar = 'X'
     base_time_2020 = '2020-12-02 11:58:39.000'
-    base_time_2024 = '2024-09-16 18:08:34.000'
 
     data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
-    data_2024, times_2024, origin_flags_2024 = _load_data(2, f_index, polar)
 
-    origin_flags_2024[31] = True  # The data from the antenna 31 in data_2024 are invalid
     num_ants_2020 = np.sum(~origin_flags_2020)
-    num_ants_2024 = np.sum(~origin_flags_2024)
 
     data_2020 = data_2020[~origin_flags_2020, :]
-    data_2024 = data_2024[~origin_flags_2024, :]
     times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
-    times_2024 = Time(base_time_2024, format='iso', scale='utc') + times_2024 * u.second
 
     location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
     times_2020.location = location
-    times_2024.location = location
 
     lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
-    lst_2024 = times_2024.sidereal_time('mean').hour  # Transform to sidereal time
 
-    lst_grid = np.linspace(0, 24, num_grids)
-    interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
-    interp_2024 = interp1d(lst_2024, data_2024, kind='linear', fill_value="extrapolate")
-
-    data_interp_2020 = interp_2020(lst_grid)
-    data_interp_2024 = interp_2024(lst_grid)
+    min_idx = np.argmin(lst_2020)
+    lst_2020_sorted = np.concatenate([lst_2020[min_idx:], lst_2020[:min_idx]])
+    data_2020_sorted = np.concatenate([data_2020[:, min_idx:], data_2020[:, :min_idx]], axis=1)
 
     base_fontsize = 26
     config = {
@@ -318,8 +305,9 @@ def auto_corr_data():
     rcParams.update(config)
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(lst_grid, data_interp_2020.T)
-    ax.set_title(str(num_ants_2020) + r' usable LBA x-pol antennas in the $\mathbf{dataset\ I}$', fontsize=28)
+    ax.plot(lst_2020_sorted, data_2020_sorted.T)
+    ax.set_title(str(num_ants_2020) + r' LBA x-pol antennas', fontsize=28)
+    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
     ax.set_ylabel('Auto-correlated power')
     if save_figure:
@@ -327,28 +315,9 @@ def auto_corr_data():
         plt.savefig(f'results/24hautocorr_raw.png', dpi=300, facecolor='w')
     plt.show()
 
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(lst_grid, data_interp_2024.T)
-    ax.set_title(str(num_ants_2024) + r' usable LBA x-pol antennas in the $\mathbf{dataset\ II}$', fontsize=28)
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Auto-correlated power')
-    if save_figure:
-        plt.savefig(f'results/24hautocorr_raw2.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/24hautocorr_raw2.png', dpi=300, facecolor='w')
-    plt.show()
-
 
 def lofar_layout():
-    save_figure = True
-
-    f_index = 230  # f = 44.92 MHz
-    polar = 'X'
-
-    data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
-    data_2024, times_2024, origin_flags_2024 = _load_data(2, f_index, polar)
-
-    either_ants_flags = origin_flags_2020 + origin_flags_2024
-    either_ants_flags[31] = True  # The data from the antenna 31 in data_2024 are invalid
+    save_figure = False
 
     base_fontsize = 26
     config = {
@@ -358,41 +327,37 @@ def lofar_layout():
     }
     rcParams.update(config)
 
-    ants_valid = ~either_ants_flags.copy()
-    ants_broken = either_ants_flags.copy()
-    ants_broken[31] = False  # The data from the antenna 31 in data_2024 are invalid but not broken
-    index_valid = np.where(ants_valid)[0]
-    index_broken = np.where(ants_broken)[0]
-    index_invalid = np.array([31])
-
     arr_origin = np.loadtxt(raw_data_path + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_name = arr_origin[:, 0]
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0]
     arr_y = arr_pos[:, 1]
 
-    arr_xvalid = arr_x.copy()[index_valid]
-    arr_yvalid = arr_y.copy()[index_valid]
-    arr_xbroken = arr_x.copy()[index_broken]
-    arr_ybroken = arr_y.copy()[index_broken]
-    arr_xinvalid = arr_x.copy()[index_invalid]
-    arr_yinvalid = arr_y.copy()[index_invalid]
     edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
+    inner_elems = [i for i in range(96) if i not in edge_elems]
+    arr_x_inner = arr_x.copy()[inner_elems]
+    arr_y_inner = arr_y.copy()[inner_elems]
+    arr_x_edge = arr_x.copy()[edge_elems]
+    arr_y_edge = arr_y.copy()[edge_elems]
 
     fig, ax = plt.subplots(figsize=(10, 10))
-    ax.scatter(arr_xvalid, arr_yvalid, s=50, c='red')
-    ax.scatter(arr_xbroken, arr_ybroken, s=50, c='black', marker='x')
-    ax.scatter(arr_xinvalid, arr_yinvalid, s=50, c='blue')
-    ax.plot([-28, -22], [-28, -22], color='blue')
+    ax.scatter(arr_x_inner, arr_y_inner, s=50, c='black')
+    ax.scatter(arr_x_edge, arr_y_edge, s=50, c='blue')
+    ax.plot([-28, -22], [-28, -22], color='red')
     ax.text(-30, -30, 'x pol', fontsize=12)
-    ax.plot([-28, -22], [-22, -28], color='blue')
+    ax.plot([-28, -22], [-22, -28], color='red')
     ax.text(-30, -20, 'y pol', fontsize=12)
     for i, name in enumerate(arr_name):
         if i in edge_elems:
-            ax.annotate(name, (arr_x[i], arr_y[i]), fontsize=12, color='red', textcoords="offset points",
-                        xytext=(0, 5), ha='center')
+            ax.annotate(
+                name, (arr_x[i], arr_y[i]), fontsize=12, color='blue', textcoords="offset points",
+                xytext=(0, 5), ha='center'
+            )
         else:
-            ax.annotate(name, (arr_x[i], arr_y[i]), fontsize=12, textcoords="offset points", xytext=(0, 5), ha='center')
+            ax.annotate(
+                name, (arr_x[i], arr_y[i]), fontsize=12, color='black', textcoords="offset points",
+                xytext=(0, 5), ha='center'
+            )
     ax.set_title('Layout of the Swedish LOFAR LBA')
     ax.set_xlabel('p Axis (m)')
     ax.set_ylabel('q Axis (m)')
@@ -403,12 +368,12 @@ def lofar_layout():
 
 
 def imp_ants():
-    save_figure = False
+    save_figure = True
 
     xpol_100 = np.load(f'{data_path}dual_xpol_96_100_f44.92_s101_numa96_imp.npy')
     xpol = np.load(f'{data_path}dual_xpol_96_f44.92_s101_numa96_imp.npy')
     ypol = np.load(f'{data_path}dual_ypol_96_f44.92_s101_numa96_imp.npy')
-    print(xpol.shape)
+    print(xpol_100.shape, xpol.shape, ypol.shape)
 
     ants = np.arange(96)
 
@@ -423,7 +388,7 @@ def imp_ants():
 
     self_xpol = np.real(np.diag(xpol[0, :, :]))
     self_ypol = np.real(np.diag(ypol[0, :, :]))
-    self_ypol = np.concatenate((self_ypol[:31], self_ypol[32:]))
+    # self_ypol = np.concatenate((self_ypol[:31], self_ypol[32:]))
     ax.plot(ants, np.diag(np.real(xpol[0, :, :])), 'y-.', label='x pol')
     ax.plot(ants, np.diag(np.real(ypol[0, :, :])), 'r-.', label='y pol')
     ax.plot(ants, np.diag(np.real(xpol_100[0, :, :])), 'b-.', label='x pol (spacing * 100)')
@@ -434,119 +399,24 @@ def imp_ants():
     ax.set_ylabel(r'Impedance ($\Omega$)')
     ax.legend(loc='lower left')
     if save_figure:
-        plt.savefig(f'results/lofar_imp.eps', dpi=300, facecolor='w')
+        plt.savefig(f'results/lofar_imp.pdf', dpi=300, facecolor='w')
     plt.show()
 
 
-# def comp_power():
-#     save_figure = True
-#
-#     num_grids = 2000
-#
-#     f_index = 230  # f = 44.92 MHz
-#     polar = 'X'
-#     base_time_2020 = '2020-12-02 11:58:39.000'
-#
-#     data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
-#
-#     times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
-#
-#     location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
-#     times_2020.location = location
-#
-#     lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
-#
-#     lst_grid = np.linspace(0, 24, num_grids)
-#     interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
-#     data_interp_2020 = interp_2020(lst_grid)
-#
-#     ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
-#     data_interp_norm_2020 = data_interp_2020 * ks_2020[:, None]
-#
-#     edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
-#     inner_elems = [i for i in range(96) if i not in edge_elems]
-#     data_interp_2020_edge = data_interp_2020[edge_elems, :]
-#     data_interp_2020_inner = data_interp_2020[inner_elems, :]
-#     data_interp_norm_2020_edge = data_interp_norm_2020[edge_elems, :]
-#     data_interp_norm_2020_inner = data_interp_norm_2020[inner_elems, :]
-#
-#     base_fontsize = 26
-#     legend_fontsize = base_fontsize
-#     text_fontsize = base_fontsize
-#     config = {
-#         "font.family": 'Times New Roman',  # 设置字体类型
-#         "font.size": base_fontsize,
-#         "mathtext.fontset": 'stix',
-#     }
-#     rcParams.update(config)
-#
-#     fig, ax = plt.subplots(figsize=(12, 8))
-#     ax.plot(lst_grid, data_interp_2020.T)
-#     ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
-#     # std = np.mean(np.std(data_interp_2020, axis=0) / np.mean(data_interp_2020, axis=0))
-#     std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
-#     ax.text(5, 2.3e7, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
-#             bbox=dict(facecolor='white', alpha=0.))
-#     ax.set_xlabel('Time over 24h')
-#     ax.set_ylabel('Auto-correlated power')
-#     if save_figure:
-#         plt.savefig(f'results/24hautocorr.pdf', dpi=300, facecolor='w')
-#         plt.savefig(f'results/24hautocorr.png', dpi=300, facecolor='w')
-#     plt.show()
-#
-#     fig, ax = plt.subplots(figsize=(12, 8))
-#     ax.plot(lst_grid, data_interp_norm_2020.T)
-#     ax.set_title(r'Case Obs, Calibrated', fontsize=base_fontsize)
-#     # std = np.mean(np.std(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020, axis=0))
-#     std = np.sqrt(np.mean(np.var(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-#     # std2 = np.sqrt(np.mean(np.var(data_interp_norm_2020, axis=0))) / np.mean(data_interp_norm_2020)
-#     # print(std, std2)
-#     ax.text(4.5, 2.0e7, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
-#             bbox=dict(facecolor='white', alpha=0.))
-#     ax.set_xlabel('Time over 24h')
-#     ax.set_ylabel('Auto-correlated power')
-#     if save_figure:
-#         plt.savefig(f'results/24hautocorr_norm.pdf', dpi=300, facecolor='w')
-#         plt.savefig(f'results/24hautocorr_norm.png', dpi=300, facecolor='w')
-#     plt.show()
-#
-#     fig, ax = plt.subplots(figsize=(12, 8))
-#     ax.plot(lst_grid, data_interp_norm_2020_inner[0, :].T, color="#0072B2", linestyle="--", label='inner elements')
-#     ax.plot(lst_grid, data_interp_norm_2020_inner[1:, :].T, color="#0072B2", linestyle="--")
-#     ax.plot(lst_grid, data_interp_norm_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
-#     ax.plot(lst_grid, data_interp_norm_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
-#     ax.set_title(r'Case Obs, Calibrated (Inner/Edge)', fontsize=base_fontsize)
-#     # std = np.mean(np.std(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020, axis=0))
-#     # ax.text(4, 2.1e7, f"relative std total = {std * 100:.3g}%", fontsize=base_fontsize, color='blue',
-#     #         bbox=dict(facecolor='white', alpha=0.5))
-#     # std_inner = np.mean(np.std(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020, axis=0))
-#     std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-#     ax.text(3, 2.1e7, f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
-#             bbox=dict(facecolor='white', alpha=0.))
-#     # std_edge = np.mean(np.std(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020, axis=0))
-#     std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-#     ax.text(3, 2.0e7, f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
-#             bbox=dict(facecolor='white', alpha=0.))
-#     ax.set_xlabel('Time over 24h')
-#     ax.set_ylabel('Auto-correlated power')
-#     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
-#     if save_figure:
-#         plt.savefig(f'results/24hautocorr_norm_check_edge.pdf', dpi=300, facecolor='w')
-#         plt.savefig(f'results/24hautocorr_norm_check_edge.png', dpi=300, facecolor='w')
-#     plt.show()
-
-
 def comp_power():
-    save_figure = True
+    save_figure = False
 
     edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
     inner_elems = [i for i in range(96) if i not in edge_elems]
 
     num_grids = 144
-    frq = 59
+    # frq = 44.92
+    frq = 41.
+    # frq = 59.
     ds = np.load(raw_data_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     freqs_mhz = ds['frequencies'] / 1e6
     f_index = np.argmin(np.abs(freqs_mhz - frq))
+    frq = freqs_mhz[f_index]
     # f_index = 230  # f = 44.92 MHz
     polar = 'X'
     base_time_2020 = '2020-12-02 11:58:39.000'
@@ -575,7 +445,7 @@ def comp_power():
     data_interp_norm_2020_edge = data_interp_norm_2020[edge_elems, :]
     data_interp_norm_2020_inner = data_interp_norm_2020[inner_elems, :]
 
-    with np.load(f'{data_path2}power_simulation{frq}.npz', allow_pickle=True) as power_sim:
+    with np.load(f'{data_path2}power_simulation_{f_index}.npz', allow_pickle=True) as power_sim:
         if num_grids == len(lst_2020):
             # times = lst_grid * 3600
             times = power_sim['times']
@@ -605,10 +475,12 @@ def comp_power():
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(lst_grid, data_interp_2020.T)
     std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
-    # loc = 2.3e7  # frq = 44.92
-    loc = 1.7e8  # frq = 59
-    ax.text(5, loc, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.25, 0.92,
+            f"relative std = {std * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -620,35 +492,25 @@ def comp_power():
         plt.savefig(f'results/24hautocorr.png', dpi=300, facecolor='w')
     plt.show()
 
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(lst_grid, data_interp_norm_2020.T)
-    # std = np.sqrt(np.mean(np.var(data_interp_norm_2020, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    # ax.text(4.5, 2.0e7, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.))
-    # ax.set_xlim(0, 24)
-    # ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Auto-correlated power')
-    # ax.set_title(r'Case Obs, Normalized', fontsize=base_fontsize)
-    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
-    # if save_figure:
-    #     plt.savefig(f'results/24hautocorr_norm.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/24hautocorr_norm.png', dpi=300, facecolor='w')
-    # plt.show()
-
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(lst_grid, data_interp_norm_2020_inner[0, :].T, color="#0072B2", linestyle="--", label='inner elements')
     ax.plot(lst_grid, data_interp_norm_2020_inner[1:, :].T, color="#0072B2", linestyle="--")
     ax.plot(lst_grid, data_interp_norm_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(lst_grid, data_interp_norm_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
-    # loc = [2.1e7, 2.0e7]  # frq = 44.92
-    loc = [1.48e8, 1.4e8]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    ax.text(3, loc[0], f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    ax.text(3, loc[1], f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -664,11 +526,13 @@ def comp_power():
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants96_temps_norm)
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    # loc = 8500  # frq = 44.92
-    loc = 5200  # frq = 59
     std = np.sqrt(np.mean(np.var(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm) ** 2))
-    ax.text(4.0, loc, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.25, 0.92,
+            f"relative std = {std * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -681,37 +545,26 @@ def comp_power():
         plt.savefig(f'results/xpol_anttemp_simulation_origin.png', dpi=300, facecolor='w')
     plt.show()
 
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(times / 3600, ants96_temps_uni)
-    # ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    # std = np.sqrt(np.mean(np.var(ants96_temps_uni, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    # ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.))
-    # ax.set_xlim(0, 24)
-    # ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Antenna temperature (K)')
-    # ax.set_title('Case MC, Normalized', fontsize=base_fontsize)
-    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
-    # if save_figure:
-    #     plt.savefig(f'results/xpol_anttemp_simulation.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/xpol_anttemp_simulation.png', dpi=300, facecolor='w')
-    # plt.show()
-
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants96_temps_uni_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
     ax.plot(times / 3600, ants96_temps_uni_inner[:, 1:], color="#0072B2", linestyle="--")
     ax.plot(times / 3600, ants96_temps_uni_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants96_temps_uni_edge[:, 1:], color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    # loc = [9500, 9100]  # frq = 44.92
-    loc = [5300, 5000]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    ax.text(1.7, loc[0], f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    ax.text(1.7, loc[1], f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -727,11 +580,13 @@ def comp_power():
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants_temps_norm_single)
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    # loc = 10500  # frq = 44.92
-    loc = 5100  # frq = 59
     std = np.sqrt(np.mean(np.var(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single) ** 2))
-    ax.text(4.0, loc, f"relative std = {std * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.25, 0.92,
+            f"relative std = {std * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -744,37 +599,26 @@ def comp_power():
         plt.savefig(f'results/xpol_anttemp_errors_origin.png', dpi=300, facecolor='w')
     plt.show()
 
-    # fig, ax = plt.subplots(figsize=(12, 8))
-    # ax.plot(times / 3600, ants_temps_uni_single)
-    # ax.plot(times / 3600, ants_temps_uni_iso, color='black')
-    # std = np.sqrt(np.mean(np.var(ants_temps_uni_single, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    # ax.text(4.0, 8500, f"relative std = {std*100:.3g}%", fontsize=text_fontsize, color='blue',
-    #         bbox=dict(facecolor='white', alpha=0.))
-    # ax.set_xlim(0, 24)
-    # ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
-    # ax.set_xlabel('Time over 24h')
-    # ax.set_ylabel('Antenna temperature (K)')
-    # ax.set_title('Case NI, Normalized', fontsize=base_fontsize)
-    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
-    # if save_figure:
-    #     plt.savefig(f'results/xpol_anttemp_errors.pdf', dpi=300, facecolor='w')
-    #     plt.savefig(f'results/xpol_anttemp_errors.png', dpi=300, facecolor='w')
-    # plt.show()
-
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants_temps_uni_single_inner[:, 0], color="#0072B2", linestyle="--", label='inner elements')
     ax.plot(times / 3600, ants_temps_uni_single_inner[:, 1:], color="#0072B2", linestyle="--")
     ax.plot(times / 3600, ants_temps_uni_single_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants_temps_uni_single_edge[:, 1:], color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    # loc = [9300, 8900]  # frq = 44.92
-    loc = [5200, 4900]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    ax.text(1.8, loc[0], f"relative std inner = {std_inner * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    ax.text(1.8, loc[1], f"relative std edge = {std_edge * 100:.3g}%", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge * 100:.3g}%",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -799,14 +643,20 @@ def comp_power():
     ax.plot(lst_grid, data_interp_cali_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(lst_grid, data_interp_cali_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    # loc = [9200, 9000]  # frq = 44.92
-    loc = [5500, 5300]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(data_interp_cali_2020_inner, axis=0)))
-    ax.text(3, loc[0], f"std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(data_interp_cali_2020_edge, axis=0)))
-    ax.text(3, loc[1], f"std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -829,14 +679,20 @@ def comp_power():
     ax.plot(times / 3600, ants96_temps_cali_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants96_temps_cali_edge[:, 1:], color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    # loc = [9500, 9100]  # frq = 44.92
-    loc = [5200, 5000]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(ants96_temps_cali_inner, axis=1)))
-    ax.text(1.7, loc[0], f"relative std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(ants96_temps_cali_edge, axis=1)))
-    ax.text(1.7, loc[1], f"relative std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -859,14 +715,20 @@ def comp_power():
     ax.plot(times / 3600, ants_temps_uni_cali_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants_temps_uni_cali_edge[:, 1:], color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    # loc = [9300, 8900]  # frq = 44.92
-    loc = [5100, 4800]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_cali_inner, axis=1)))
-    ax.text(1.8, loc[0], f"relative std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_cali_edge, axis=1)))
-    ax.text(1.8, loc[1], f"relative std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -889,13 +751,19 @@ def comp_power():
     ax.plot(lst_grid, resi_data_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(lst_grid, resi_data_edge[1:, :].T, color="#E69F00", linestyle="-")
     std_inner = np.sqrt(np.mean(np.var(resi_data_inner, axis=0)))
-    # loc = [300, 250]  # frq = 44.92
-    loc = [300, 250]  # frq = 59
-    ax.text(3, loc[0], f"std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(resi_data_edge, axis=0)))
-    ax.text(3, loc[1], f"std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -917,14 +785,20 @@ def comp_power():
     ax.plot(times / 3600, resi_ants96_temps_inner[:, 1:], color="#0072B2", linestyle="--")
     ax.plot(times / 3600, resi_ants96_temps_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, resi_ants96_temps_edge[:, 1:], color="#E69F00", linestyle="-")
-    # loc = [110, 80]  # frq = 44.92
-    loc = [65, 50]  # frq = 59
     std_inner = np.sqrt(np.mean(np.var(resi_ants96_temps_inner, axis=1)))
-    ax.text(1.7, loc[0], f"relative std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(resi_ants96_temps_edge, axis=1)))
-    ax.text(1.7, loc[1], f"relative std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -947,13 +821,19 @@ def comp_power():
     ax.plot(times / 3600, resi_ants_temps_uni_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, resi_ants_temps_uni_edge[:, 1:], color="#E69F00", linestyle="-")
     std_inner = np.sqrt(np.mean(np.var(resi_ants_temps_uni_inner, axis=1)))
-    # loc = [20, 15]  # frq = 44.92
-    loc = [16, 13]  # frq = 59
-    ax.text(1.8, loc[0], f"relative std inner = {std_inner:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
     std_edge = np.sqrt(np.mean(np.var(resi_ants_temps_uni_edge, axis=1)))
-    ax.text(1.8, loc[1], f"relative std edge = {std_edge:.3g} K", fontsize=text_fontsize, color='blue',
-            bbox=dict(facecolor='white', alpha=0.))
+    ax.text(0.20, 0.92,
+            f"relative std inner = {std_inner:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
+    ax.text(0.20, 0.85,
+            f"relative std inner = {std_edge:.3g} K",
+            transform=ax.transAxes,
+            fontsize=text_fontsize,
+            color='blue',
+            bbox=dict(facecolor='white', alpha=0.0))
     ax.set_xlim(0, 24)
     ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
@@ -1087,22 +967,20 @@ def resi_spectrum():
     save_figure = False
 
     ds = np.load(raw_data_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
-    freqs_mhz = ds['frequencies'] / 1e6
     # freq_channel = np.argmin(np.abs(freqs_MHz - 44.92))
     # # files = ds.files()  # heads
     # print(freq_channel)
-
-    num_channels = len(freqs_mhz)
+    freqs_mhz = ds['frequencies'] / 1e6
+    ch_low = np.argmin(np.abs(freqs_mhz - 30))
+    ch_high = np.argmin(np.abs(freqs_mhz - 80))
+    freqs_mhz = freqs_mhz[ch_low:ch_high]
 
     std_inner_spectrum = []
     std_edge_spectrum = []
     vis_mean_spectrum = []
-    for f_index in range(num_channels):
-
-        # if f_index >= 50:
-        #     break
-
-        print(f_index)
+    std_inner_spectrum2 = []
+    std_edge_spectrum2 = []
+    for f_index in tqdm(range(ch_low, ch_high, 1)):
 
         edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
         inner_elems = [i for i in range(96) if i not in edge_elems]
@@ -1130,8 +1008,6 @@ def resi_spectrum():
 
         ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
         data_interp_norm_2020 = data_interp_2020 * ks_2020[:, None]
-        # data_interp_2020_edge = data_interp_2020[edge_elems, :]
-        # data_interp_2020_inner = data_interp_2020[inner_elems, :]
         data_interp_norm_2020_edge = data_interp_norm_2020[edge_elems, :]
         data_interp_norm_2020_inner = data_interp_norm_2020[inner_elems, :]
 
@@ -1157,17 +1033,15 @@ def resi_spectrum():
     rcParams.update(config)
 
     print(std_inner_spectrum[230], std_edge_spectrum[230])
-    ch_low = np.argmin(np.abs(freqs_mhz - 30))
-    ch_high = np.argmin(np.abs(freqs_mhz - 80))
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(freqs_mhz[ch_low:ch_high+1], std_inner_spectrum[ch_low:ch_high+1] * 100, label='Inner')
-    ax.plot(freqs_mhz[ch_low:ch_high+1], std_edge_spectrum[ch_low:ch_high+1] * 100, label='Edge')
-    # ax.axvline(x=59)
+    ax.plot(freqs_mhz, std_inner_spectrum * 100, label='Inner')
+    ax.plot(freqs_mhz, std_edge_spectrum * 100, label='Edge')
+    ax.axvline(x=41)
     ax.set_xlabel('Frequency [MHz]')
     ax.set_ylabel('Relative Standard Deviation [%]')
     ax.set_ylim([-0.1, 3.1])
-    # ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
+    ax.set_title(r'Case Obs', fontsize=base_fontsize)
     # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     ax.legend()
     if save_figure:
@@ -1176,7 +1050,92 @@ def resi_spectrum():
     plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(freqs_mhz[ch_low:ch_high+1], vis_mean_spectrum[ch_low:ch_high+1] * 100)
+    ax.plot(freqs_mhz, vis_mean_spectrum)
+    ax.set_xlabel('Frequency [MHz]')
+    ax.set_ylabel('Mean auto-correlated power')
+    # ax.set_ylim([-0.1, 3.1])
+    # ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    ax.legend()
+    if save_figure:
+        plt.savefig(f'results/2.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/2.png', dpi=300, facecolor='w')
+    plt.show()
+
+    # sys.exit()
+
+    freqs_mhz2 = freqs_mhz[::3]
+
+    ants96_std_inner_spectrum = []
+    ants96_std_edge_spectrum = []
+    ants_std_inner_spectrum = []
+    ants_std_edge_spectrum = []
+    data_mean_spectrum = []
+    for f_index in tqdm(range(ch_low, ch_high, 3)):
+        with np.load(f'{data_path2}power_simulation_{f_index}.npz', allow_pickle=True) as power_sim:
+            # times = power_sim['times']
+            # times = np.linspace(0, 24 * 3600, len(times), endpoint=False)
+            # ants_temps_uni_iso = power_sim['ants_temps_uni_iso']
+            # ants96_temps_norm = power_sim['ants96_temps_norm']
+            ants96_temps_uni = power_sim['ants96_temps_uni']
+            ants_temps_norm_single = power_sim['ants_temps_norm_single']
+            ants_temps_uni_single = power_sim['ants_temps_uni_single']
+        ants96_temps_uni_edge = ants96_temps_uni[:, edge_elems]
+        ants96_temps_uni_inner = ants96_temps_uni[:, inner_elems]
+        ants_temps_uni_single_edge = ants_temps_uni_single[:, edge_elems]
+        ants_temps_uni_single_inner = ants_temps_uni_single[:, inner_elems]
+
+        ants96_std_edge = np.sqrt(np.mean(np.var(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni) ** 2))
+        ants96_std_inner = np.sqrt(np.mean(np.var(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni) ** 2))
+        ants_std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+        ants_std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+
+        ants96_std_edge_spectrum.append(ants96_std_edge)
+        ants96_std_inner_spectrum.append(ants96_std_inner)
+        ants_std_edge_spectrum.append(ants_std_edge)
+        ants_std_inner_spectrum.append(ants_std_inner)
+
+        data_mean = np.mean(ants96_temps_uni)
+        data_mean_spectrum.append(data_mean)
+
+    ants96_std_edge_spectrum = np.array(ants96_std_edge_spectrum)
+    ants96_std_inner_spectrum = np.array(ants96_std_inner_spectrum)
+    ants_std_edge_spectrum = np.array(ants_std_edge_spectrum)
+    ants_std_inner_spectrum = np.array(ants_std_inner_spectrum)
+    data_mean_spectrum = np.array(data_mean_spectrum)
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(freqs_mhz2, ants96_std_inner_spectrum * 100, label='Inner')
+    ax.plot(freqs_mhz2, ants96_std_edge_spectrum * 100, label='Edge')
+    ax.axvline(x=41)
+    ax.set_xlabel('Frequency [MHz]')
+    ax.set_ylabel('Relative Standard Deviation [%]')
+    # ax.set_ylim([-0.1, 3.1])
+    ax.set_title(r'Case MC', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    ax.legend()
+    if save_figure:
+        plt.savefig(f'results/3.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/3.png', dpi=300, facecolor='w')
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(freqs_mhz2, ants_std_inner_spectrum * 100, label='Inner')
+    ax.plot(freqs_mhz2, ants_std_edge_spectrum * 100, label='Edge')
+    ax.axvline(x=41)
+    ax.set_xlabel('Frequency [MHz]')
+    ax.set_ylabel('Relative Standard Deviation [%]')
+    # ax.set_ylim([-0.1, 3.1])
+    ax.set_title(r'Case NI', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    ax.legend()
+    if save_figure:
+        plt.savefig(f'results/3.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'results/3.png', dpi=300, facecolor='w')
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.plot(freqs_mhz2, data_mean_spectrum)
     ax.set_xlabel('Frequency [MHz]')
     ax.set_ylabel('Mean auto-correlated power')
     # ax.set_ylim([-0.1, 3.1])
@@ -1194,7 +1153,7 @@ if __name__ == '__main__':
     # auto_corr_data()
     # lofar_layout()
     # imp_ants()
-    comp_power()
+    # comp_power()
     # power_diff()
-    # resi_spectrum()
+    resi_spectrum()
     pass
