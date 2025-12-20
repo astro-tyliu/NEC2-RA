@@ -2,7 +2,7 @@ import sys
 
 import numpy as np
 import matplotlib as mpl
-mpl.use('AGG')
+# mpl.use('AGG')
 
 from matplotlib import rcParams
 from matplotlib import pyplot as plt
@@ -22,8 +22,8 @@ from scipy.interpolate import SmoothSphereBivariateSpline, interp1d
 
 np.set_printoptions(precision=4, linewidth=80)
 raw_data_path = '../data/'
-data_path = './figures_thesis_materials/'
-data_path2 = './figures_paper_materials/'
+data_path = '../figures_thesis_materials/'
+data_path2 = '../figures_paper_materials/'
 
 
 def _load_data(data_set, f_index, polar):
