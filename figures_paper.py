@@ -21,7 +21,7 @@ import astropy.units as u
 from scipy.interpolate import SmoothSphereBivariateSpline, interp1d
 
 np.set_printoptions(precision=4, linewidth=80)
-raw_data_path = '../data/'
+raw_data_path = '../raw_data/'
 data_path = '../figures_thesis_materials/'
 data_path2 = '../figures_paper_materials/'
 
@@ -973,6 +973,7 @@ def resi_spectrum():
     freqs_mhz = ds['frequencies'] / 1e6
     ch_low = np.argmin(np.abs(freqs_mhz - 30))
     ch_high = np.argmin(np.abs(freqs_mhz - 80))
+    print(ch_low, ch_high, np.argmin(np.abs(freqs_mhz - 45)), np.argmin(np.abs(freqs_mhz - 44.92)))
     freqs_mhz = freqs_mhz[ch_low:ch_high]
 
     std_inner_spectrum = []

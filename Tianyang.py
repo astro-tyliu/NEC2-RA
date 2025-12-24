@@ -20,11 +20,11 @@ import sys
 
 
 np.set_printoptions(precision=4, linewidth=80)
-channel = sys.argv[1]
-root_path = '../data/'
+# channel = sys.argv[1]
+root_path = '../raw_data/'
 
 
-def simulate_lofar(frq_start, frq_end=None, xpol=True, ypol=True, excite='X', ground=True, special=None):
+def simulate_lofar(sample_start, sample_end=None, channel=False, xpol=True, ypol=True, excite='X', ground=True, special=None):
     """
     Args:
         excite (str): It must be 'X' or 'Y'.
@@ -34,11 +34,6 @@ def simulate_lofar(frq_start, frq_end=None, xpol=True, ypol=True, excite='X', gr
     print('Start ...')
 
     # Save or not
-    mark_start = frq_start
-    if frq_end is None:
-        mark_end = 0
-    else:
-        mark_end = frq_end
     save_necfile = False
     save_imp = True
     save_figure = True
@@ -53,19 +48,22 @@ def simulate_lofar(frq_start, frq_end=None, xpol=True, ypol=True, excite='X', gr
     wire_radius = 0.001 * 1
     sep = 2.5 * wire_radius
 
+    # Simulation params
     ds = np.load(root_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     freqs_mhz = ds['frequencies'] / 1e6
-    # Simulation params
-    ext_thinwire = True
-    f_index = np.argmin(np.abs(freqs_mhz - frq_start))
-    frq_cntr = freqs_mhz[f_index]
-    if frq_end is None:
+    if channel is False:
+        sample_start = np.argmin(np.abs(freqs_mhz - sample_start))
+        if sample_end is not None:
+            sample_end = np.argmin(np.abs(freqs_mhz - sample_end))
+    if sample_end is None:
         nr_freqs = 1
+        frq_cntr = freqs_mhz[sample_start]
         step_freq = 1.0
     else:
-        f_index_end = np.argmin(np.abs(freqs_mhz - frq_end))
-        nr_freqs = f_index_end - f_index + 1
-        step_freq = freqs_mhz[f_index + 1] - freqs_mhz[f_index]
+        nr_freqs = sample_end - sample_start + 1
+        frq_cntr = freqs_mhz[sample_start]
+        step_freq = freqs_mhz[sample_start + 1] - freqs_mhz[sample_start]
+    print(nr_freqs, frq_cntr, step_freq)
     nr_thetas = 46
     step_theta = 2.0
     nr_phis = 180
@@ -74,6 +72,13 @@ def simulate_lofar(frq_start, frq_end=None, xpol=True, ypol=True, excite='X', gr
 
     # input impedance(s)
     input_imp = 5.6-236.7j
+
+    # mark on the file name
+    mark_start = sample_start
+    if sample_end is None:
+        mark_end = 0
+    else:
+        mark_end = sample_end
 
     arr_origin = np.loadtxt(root_path + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_pos = arr_origin[:, 1:3].astype(float)
@@ -2579,7 +2584,7 @@ def single_antenna_simulation():
 if __name__ == '__main__':
     st = time()
     # arr_layout()
-    # simulate_lofar(30, frq_end=None, xpol=True, ypol=False, excite='X', ground=True, special=None)
+    simulate_lofar(230, sample_end=430, channel=True, xpol=True, ypol=False, excite='X', ground=True, special=None)
     # imp_ants()
     # power_antenna()
     # power_time()
