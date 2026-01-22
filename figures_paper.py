@@ -7,7 +7,7 @@ import matplotlib as mpl
 from matplotlib import rcParams
 from matplotlib import pyplot as plt
 import pandas as pd
-from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire,
+from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire, impedanceRLC,
                        ExecutionBlock, RadPatternSpec, EEPdata)
 from time import time
 # from pygdsm import GlobalSkyModel16, GSMObserver16, GlobalSkyModel, GSMObserver, LowFrequencySkyModel, LFSMObserver
@@ -1149,6 +1149,61 @@ def resi_spectrum():
     plt.show()
 
 
+def two_lamhalfdip():
+    lamhalf = 1.0
+    w_radii = 1e-5*2*lamhalf
+    dip_len = lamhalf
+    p1 = (0., 0., -dip_len/2)
+    p2 = (0., 0., +dip_len/2)
+    l12 = (p1, p2)
+    twodip = ArrayModel('2dip_sbs')
+    twodip['dip']['Z'] = Wire(*l12, w_radii).add_port(0.5,'VS')
+    return twodip
+
+
+def generate_loads():
+    """
+    Test array with given load
+
+    Same array as in test_Array_2_lamhalfdip_sbys()
+    """
+    # Use function to build model of lambda half dipole
+    twodip = two_lamhalfdip()
+    fs = FreqSteps('lin', 30, 80., 4.)  # MHz
+    twodip.segmentalize(65, fs.max_freq())
+    portname = 'VS'
+    ex_port = (portname, VoltageSource(1.0))
+    arr_pos = [[0.,0.,0.], [6., 0., 0.]]
+    twodip.arrayify(element=['dip'], array_positions=arr_pos)
+    rps = RadPatternSpec(nth=1, dth=1., thets=90., phis=0.)
+    #rps = None
+    eepdat = twodip.excite_1by1(ExecutionBlock(fs, ex_port, rps))
+
+    load_adm = impedanceRLC(fs.aslist(False), 50., None, 1.e-12, 'parallel', False)
+    #load_adm_k = impedanceRLC(fs.aslist(False), 1000., 17e-7, None, 'series', False)
+    print(fs.aslist(False))
+    print(load_adm)
+
+    eepNO = eepdat.transform_to('NO', adm_load=load_adm)
+    a_NO = eepNO.get_EELs().area_eff()
+    a=np.diagonal(eepdat.get_impedances(),axis1=-2,axis2=-1)[...,0]
+    b=1/load_adm
+
+    plt.plot(fs.aslist(), np.real(a), 'b')
+    plt.plot(fs.aslist(), np.imag(a), 'r')
+    plt.plot(fs.aslist(), np.real(b), 'b.-')
+    plt.plot(fs.aslist(), np.imag(b), 'r.-')
+    plt.grid()
+    plt.show()
+    _n = a_NO[1,:].squeeze()
+    plt.plot(fs.aslist(), _n,'k')
+    print(np.max(_n))
+    plt.xlabel('Freq. [MHz]')
+    plt.ylabel('Area eff [m^2]')
+    plt.title('Thin loaded dipole')
+    plt.show()
+
+
 if __name__ == '__main__':
     # power_antenna()
     # auto_corr_data()
@@ -1156,5 +1211,6 @@ if __name__ == '__main__':
     # imp_ants()
     # comp_power()
     # power_diff()
-    resi_spectrum()
+    # resi_spectrum()
+    generate_loads()
     pass
