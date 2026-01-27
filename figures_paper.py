@@ -1,29 +1,20 @@
-import sys
-
 import numpy as np
-import matplotlib as mpl
+# import matplotlib as mpl
 # mpl.use('AGG')
-
 from matplotlib import rcParams
 from matplotlib import pyplot as plt
-import pandas as pd
-from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire, impedanceRLC,
-                       ExecutionBlock, RadPatternSpec, EEPdata)
-from time import time
-# from pygdsm import GlobalSkyModel16, GSMObserver16, GlobalSkyModel, GSMObserver, LowFrequencySkyModel, LFSMObserver
-from pygdsm import LowFrequencySkyModel, LFSMObserver
-from datetime import datetime
+from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire, impedanceRLC, ExecutionBlock, RadPatternSpec)
 import healpy as hp
 from tqdm import tqdm
 from astropy.time import Time
-from astropy.coordinates import EarthLocation, Longitude
+from astropy.coordinates import EarthLocation
 import astropy.units as u
-from scipy.interpolate import SmoothSphereBivariateSpline, interp1d
+from scipy.interpolate import interp1d
 
 np.set_printoptions(precision=4, linewidth=80)
 raw_data_path = '../raw_data/'
-data_path = '../figures_thesis_materials/'
-data_path2 = '../figures_paper_materials/'
+data_path = '../general_materials/'
+data_path2 = '../paper_materials/'
 
 
 def _load_data(data_set, f_index, polar):
@@ -119,7 +110,7 @@ def _random_antenna(nr_samples, frq_cntr, rel_std=0.01, xpol=True, ypol=True, ex
     nr_phis = 180
     segmentalize = 101
 
-    wire_radius = 0.001
+    wire_radius = 0.0005
     sep = 2.5 * wire_radius
     pw = 0.090
     ph = 1.6
@@ -368,12 +359,12 @@ def lofar_layout():
 
 
 def imp_ants():
-    save_figure = True
+    save_figure = False
 
-    xpol_100 = np.load(f'{data_path}dual_xpol_96_100_f44.92_s101_numa96_imp.npy')
+    # xpol_100 = np.load(f'{data_path}dual_xpol_96_100_f44.92_s101_numa96_imp.npy')
     xpol = np.load(f'{data_path}dual_xpol_96_f44.92_s101_numa96_imp.npy')
     ypol = np.load(f'{data_path}dual_ypol_96_f44.92_s101_numa96_imp.npy')
-    print(xpol_100.shape, xpol.shape, ypol.shape)
+    # print(xpol_100.shape, xpol.shape, ypol.shape)
 
     ants = np.arange(96)
 
@@ -391,7 +382,7 @@ def imp_ants():
     # self_ypol = np.concatenate((self_ypol[:31], self_ypol[32:]))
     ax.plot(ants, np.diag(np.real(xpol[0, :, :])), 'y-.', label='x pol')
     ax.plot(ants, np.diag(np.real(ypol[0, :, :])), 'r-.', label='y pol')
-    ax.plot(ants, np.diag(np.real(xpol_100[0, :, :])), 'b-.', label='x pol (spacing * 100)')
+    # ax.plot(ants, np.diag(np.real(xpol_100[0, :, :])), 'b-.', label='x pol (spacing * 100)')
     text = f'x pol relative std = {format(np.std(self_xpol) / np.mean(self_xpol), ".2%")} \n' \
            f'y pol relative std = {format(np.std(self_ypol) / np.mean(self_ypol), ".2%")}'
     ax.text(36, 27.54, text, fontsize=base_fontsize)
@@ -410,8 +401,8 @@ def comp_power():
     inner_elems = [i for i in range(96) if i not in edge_elems]
 
     num_grids = 144
-    # frq = 44.92
-    frq = 41.
+    frq = 44.92
+    # frq = 41.
     # frq = 59.
     ds = np.load(raw_data_path + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     freqs_mhz = ds['frequencies'] / 1e6
@@ -1195,7 +1186,7 @@ def generate_loads():
     plt.plot(fs.aslist(), np.imag(b), 'r.-')
     plt.grid()
     plt.show()
-    _n = a_NO[1,:].squeeze()
+    _n = a_NO[1, :].squeeze()
     plt.plot(fs.aslist(), _n,'k')
     print(np.max(_n))
     plt.xlabel('Freq. [MHz]')
@@ -1209,8 +1200,8 @@ if __name__ == '__main__':
     # auto_corr_data()
     # lofar_layout()
     # imp_ants()
-    # comp_power()
+    comp_power()
     # power_diff()
     # resi_spectrum()
-    generate_loads()
+    # generate_loads()
     pass
