@@ -1,6 +1,6 @@
 import numpy as np
-# import matplotlib as mpl
-# mpl.use('AGG')
+import matplotlib as mpl
+mpl.use('AGG')
 from matplotlib import rcParams
 from matplotlib import pyplot as plt
 import pandas as pd
@@ -19,7 +19,7 @@ import sys
 
 
 np.set_printoptions(precision=4, linewidth=80)
-# channel = sys.argv[1]
+channel = int(sys.argv[1])
 raw_dir = '../raw_data/'
 
 
@@ -38,7 +38,7 @@ def simulate_lofar(
     # Save or not
     save_necfile = False
     save_imp = True
-    save_figure = True
+    save_figure = False
     save_figure_data = True
     save_EEP = True
 
@@ -233,7 +233,7 @@ def simulate_lofar(
         if save_figure:
             plt.savefig(
                 f'../general_materials/{prefix}_f{mark_start}_f{mark_end}_s{segmentalize}_numa{np.shape(arr_pos)[0]}_'
-                f'lofar_eels.eps', dpi=300, facecolor='w')
+                f'lofar_eels.png', dpi=300, facecolor='w')
         plt.show()
 
     return Z
@@ -1867,10 +1867,34 @@ def single_antenna_simulation():
     area_eff_zenith = beam_zenith * (c.value * 1e-6 / frqlist) ** 2 / (4 * np.pi)
 
 
+def compare_npy_numeric(file1, file2, rtol=1e-6, atol=1e-8):
+    a = np.load(file1)
+    b = np.load(file2)
+
+    if a.shape != b.shape:
+        return False, "shape不同"
+
+    if a.dtype != b.dtype:
+        return False, f"dtype不同: {a.dtype} vs {b.dtype}"
+
+    diff = a - b
+    max_abs_diff = np.nanmax(np.abs(diff))
+
+    ok = np.allclose(a, b, rtol=rtol, atol=atol, equal_nan=True)
+
+    msg = (
+        f"allclose={ok}, "
+        f"max|diff|={max_abs_diff:.3e}, "
+        f"rtol={rtol}, atol={atol}"
+    )
+
+    return ok, msg
+
+
 if __name__ == '__main__':
     st = time()
     # arr_layout()
-    simulate_lofar(230, sample_end=None, channel=True, freq_ref=80., xpol=True, ypol=True, excite='X', ground=True,
+    simulate_lofar(channel, sample_end=None, channel=True, freq_ref=80., xpol=True, ypol=True, excite='X', ground=True,
                    special=None)
     # imp_ants()
     # power_antenna()
@@ -1887,8 +1911,12 @@ if __name__ == '__main__':
     # bbb = single_antenna()
     # time_test()
     # normalization()
-    power_simulation()
+    # power_simulation()
     # single_antenna_simulation()
+    # same, msg = compare_npy_numeric("../general_materials/2_dual_xpol_16_f230_f0_s65_numa16_lofar_eels.npy",
+    #                                 "../general_materials/dual_xpol_16_f230_f0_s65_numa16_lofar_eels.npy",
+    #                                 rtol=1e-6, atol=1e-8)
+    # print(same, msg)
 
     et = time()
     print("time: %.2f seconds" % (et - st))
