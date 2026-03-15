@@ -395,7 +395,7 @@ def imp_ants():
 
 
 def comp_power():
-    save_figure = False
+    save_figure = True
 
     edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
     inner_elems = [i for i in range(96) if i not in edge_elems]
@@ -452,6 +452,7 @@ def comp_power():
     ants96_temps_uni_inner = ants96_temps_uni[:, inner_elems]
     ants_temps_uni_single_edge = ants_temps_uni_single[:, edge_elems]
     ants_temps_uni_single_inner = ants_temps_uni_single[:, inner_elems]
+    print(np.shape(np.var(ants96_temps_norm, axis=1)), np.shape(ants96_temps_norm))
 
     base_fontsize = 30
     legend_fontsize = base_fontsize
@@ -465,9 +466,11 @@ def comp_power():
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(lst_grid, data_interp_2020.T)
-    std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
+    # std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
+    cv = np.std(data_interp_2020, axis=0) / np.mean(data_interp_2020, axis=0)
+    rms_cv = np.sqrt(np.mean(cv ** 2))
     ax.text(0.25, 0.92,
-            f"relative std = {std * 100:.3g}%",
+            f"RMS CV = {rms_cv * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -479,8 +482,8 @@ def comp_power():
     ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/24hautocorr.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/24hautocorr.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr.png', dpi=300, facecolor='w')
     plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -488,16 +491,20 @@ def comp_power():
     ax.plot(lst_grid, data_interp_norm_2020_inner[1:, :].T, color="#0072B2", linestyle="--")
     ax.plot(lst_grid, data_interp_norm_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(lst_grid, data_interp_norm_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
-    std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+    # std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+    cv_inner = np.std(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020, axis=0)
+    rms_cv_inner = np.sqrt(np.mean(cv_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
+    cv_edge = np.std(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020, axis=0)
+    rms_cv_edge = np.sqrt(np.mean(cv_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner * 100:.3g}%",
+            f"RMS CV inner = {rms_cv_inner * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge * 100:.3g}%",
+            f"RMS CV edge = {rms_cv_edge * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -510,16 +517,18 @@ def comp_power():
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/24hautocorr_norm_check_edge.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/24hautocorr_norm_check_edge.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr_norm_check_edge.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr_norm_check_edge.png', dpi=300, facecolor='w')
     plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants96_temps_norm)
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    std = np.sqrt(np.mean(np.var(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm) ** 2))
+    # std = np.sqrt(np.mean(np.var(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm) ** 2))
+    cv = np.std(ants96_temps_norm, axis=1) / np.mean(ants96_temps_norm, axis=1)
+    rms_cv = np.sqrt(np.mean(cv ** 2))
     ax.text(0.25, 0.92,
-            f"relative std = {std * 100:.3g}%",
+            f"RMS CV = {rms_cv * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -532,8 +541,8 @@ def comp_power():
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation_origin.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation_origin.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_simulation_origin.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_simulation_origin.png', dpi=300, facecolor='w')
     plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -542,16 +551,20 @@ def comp_power():
     ax.plot(times / 3600, ants96_temps_uni_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants96_temps_uni_edge[:, 1:], color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    std_inner = np.sqrt(np.mean(np.var(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni) ** 2))
-    std_edge = np.sqrt(np.mean(np.var(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni) ** 2))
+    # std_inner = np.sqrt(np.mean(np.var(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni) ** 2))
+    cv_inner = np.std(ants96_temps_uni_inner, axis=1) / np.mean(ants96_temps_uni, axis=1)
+    rms_cv_inner = np.sqrt(np.mean(cv_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni) ** 2))
+    cv_edge = np.std(ants96_temps_uni_edge, axis=1) / np.mean(ants96_temps_uni, axis=1)
+    rms_cv_edge = np.sqrt(np.mean(cv_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner * 100:.3g}%",
+            f"RMS CV inner = {rms_cv_inner * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge * 100:.3g}%",
+            f"RMS CV edge = {rms_cv_edge * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -564,16 +577,18 @@ def comp_power():
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation_check_edge.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation_check_edge.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_simulation_check_edge.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_simulation_check_edge.png', dpi=300, facecolor='w')
     plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants_temps_norm_single)
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    std = np.sqrt(np.mean(np.var(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single) ** 2))
+    # std = np.sqrt(np.mean(np.var(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single) ** 2))
+    cv = np.std(ants_temps_norm_single, axis=1) / np.mean(ants_temps_norm_single, axis=1)
+    rms_cv = np.sqrt(np.mean(cv ** 2))
     ax.text(0.25, 0.92,
-            f"relative std = {std * 100:.3g}%",
+            f"RMS CV = {rms_cv * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -586,8 +601,8 @@ def comp_power():
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors_origin.pdf', dpi=300+10, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_errors_origin.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_errors_origin.pdf', dpi=300+10, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_errors_origin.png', dpi=300, facecolor='w')
     plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -596,16 +611,20 @@ def comp_power():
     ax.plot(times / 3600, ants_temps_uni_single_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants_temps_uni_single_edge[:, 1:], color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single) ** 2))
-    std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+    # std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+    cv_inner = np.std(ants_temps_uni_single_inner, axis=1) / np.mean(ants_temps_uni_single, axis=1)
+    rms_cv_inner = np.sqrt(np.mean(cv_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single) ** 2))
+    cv_edge = np.std(ants_temps_uni_single_edge, axis=1) / np.mean(ants_temps_uni_single, axis=1)
+    rms_cv_edge = np.sqrt(np.mean(cv_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner * 100:.3g}%",
+            f"RMS CV inner = {rms_cv_inner * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge * 100:.3g}%",
+            f"RMS CV edge = {rms_cv_edge * 100:.3g}%",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -618,8 +637,8 @@ def comp_power():
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors_check_edge.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_errors_check_edge.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_errors_check_edge.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_errors_check_edge.png', dpi=300, facecolor='w')
     plt.show()
 
     ref = np.mean(ants_temps_uni_iso)
@@ -634,16 +653,20 @@ def comp_power():
     ax.plot(lst_grid, data_interp_cali_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(lst_grid, data_interp_cali_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    std_inner = np.sqrt(np.mean(np.var(data_interp_cali_2020_inner, axis=0)))
-    std_edge = np.sqrt(np.mean(np.var(data_interp_cali_2020_edge, axis=0)))
+    # std_inner = np.sqrt(np.mean(np.var(data_interp_cali_2020_inner, axis=0)))
+    std_inner = np.std(data_interp_cali_2020_inner, axis=0)
+    rms_std_inner = np.sqrt(np.mean(std_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(data_interp_cali_2020_edge, axis=0)))
+    std_edge = np.std(data_interp_cali_2020_edge, axis=0)
+    rms_std_edge = np.sqrt(np.mean(std_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner:.3g} K",
+            f"RMS STD inner = {rms_std_inner:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge:.3g} K",
+            f"RMS STD edge = {rms_std_edge:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -656,8 +679,8 @@ def comp_power():
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/24hautocorr_norm_calibrated.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/24hautocorr_norm_calibrated.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr_norm_calibrated.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr_norm_calibrated.png', dpi=300, facecolor='w')
     plt.show()
 
     ants96_sim_inner = ref / np.mean(ants96_temps_uni_inner, axis=0)
@@ -670,16 +693,20 @@ def comp_power():
     ax.plot(times / 3600, ants96_temps_cali_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants96_temps_cali_edge[:, 1:], color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    std_inner = np.sqrt(np.mean(np.var(ants96_temps_cali_inner, axis=1)))
-    std_edge = np.sqrt(np.mean(np.var(ants96_temps_cali_edge, axis=1)))
+    # std_inner = np.sqrt(np.mean(np.var(ants96_temps_cali_inner, axis=1)))
+    std_inner = np.std(ants96_temps_cali_inner, axis=1)
+    rms_std_inner = np.sqrt(np.mean(std_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(ants96_temps_cali_edge, axis=1)))
+    std_edge = np.std(ants96_temps_cali_edge, axis=1)
+    rms_std_edge = np.sqrt(np.mean(std_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner:.3g} K",
+            f"RMS STD inner = {rms_std_inner:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge:.3g} K",
+            f"RMS STD edge = {rms_std_edge:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -692,8 +719,8 @@ def comp_power():
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation_calibrated.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation_calibrated.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_simulation_calibrated.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_simulation_calibrated.png', dpi=300, facecolor='w')
     plt.show()
 
     ants_sim_inner = ref / np.mean(ants_temps_uni_single_inner, axis=0)
@@ -706,16 +733,20 @@ def comp_power():
     ax.plot(times / 3600, ants_temps_uni_cali_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, ants_temps_uni_cali_edge[:, 1:], color="#E69F00", linestyle="-")
     ax.plot(times / 3600, ants_temps_uni_iso, color='black', label='Case AF')
-    std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_cali_inner, axis=1)))
-    std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_cali_edge, axis=1)))
+    # std_inner = np.sqrt(np.mean(np.var(ants_temps_uni_cali_inner, axis=1)))
+    std_inner = np.std(ants_temps_uni_cali_inner, axis=1)
+    rms_std_inner = np.sqrt(np.mean(std_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(ants_temps_uni_cali_edge, axis=1)))
+    std_edge = np.std(ants_temps_uni_cali_edge, axis=1)
+    rms_std_edge = np.sqrt(np.mean(std_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner:.3g} K",
+            f"RMS STD inner = {rms_std_inner:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge:.3g} K",
+            f"RMS STD edge = {rms_std_edge:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -728,8 +759,8 @@ def comp_power():
     ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors_calibrated.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_errors_calibrated.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_errors_calibrated.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_errors_calibrated.png', dpi=300, facecolor='w')
     plt.show()
 
     data_stack = np.vstack((data_interp_cali_2020_inner, data_interp_cali_2020_edge))
@@ -741,16 +772,20 @@ def comp_power():
     ax.plot(lst_grid, resi_data_inner[1:, :].T, color="#0072B2", linestyle="--")
     ax.plot(lst_grid, resi_data_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(lst_grid, resi_data_edge[1:, :].T, color="#E69F00", linestyle="-")
-    std_inner = np.sqrt(np.mean(np.var(resi_data_inner, axis=0)))
-    std_edge = np.sqrt(np.mean(np.var(resi_data_edge, axis=0)))
+    # std_inner = np.sqrt(np.mean(np.var(resi_data_inner, axis=0)))
+    std_inner = np.std(resi_data_inner, axis=0)
+    rms_std_inner = np.sqrt(np.mean(std_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(resi_data_edge, axis=0)))
+    std_edge = np.std(resi_data_edge, axis=0)
+    rms_std_edge = np.sqrt(np.mean(std_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner:.3g} K",
+            f"RMS STD inner = {rms_std_inner:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge:.3g} K",
+            f"RMS STD edge = {rms_std_edge:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -763,8 +798,8 @@ def comp_power():
     ax.legend(loc="lower left", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(0, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/24hautocorr_calibrated_resi.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/24hautocorr_calibrated_resi.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr_calibrated_resi.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr_calibrated_resi.png', dpi=300, facecolor='w')
     plt.show()
 
     ants96_temps_stack = np.hstack((ants96_temps_cali_inner, ants96_temps_cali_edge))
@@ -776,16 +811,20 @@ def comp_power():
     ax.plot(times / 3600, resi_ants96_temps_inner[:, 1:], color="#0072B2", linestyle="--")
     ax.plot(times / 3600, resi_ants96_temps_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, resi_ants96_temps_edge[:, 1:], color="#E69F00", linestyle="-")
-    std_inner = np.sqrt(np.mean(np.var(resi_ants96_temps_inner, axis=1)))
-    std_edge = np.sqrt(np.mean(np.var(resi_ants96_temps_edge, axis=1)))
+    # std_inner = np.sqrt(np.mean(np.var(resi_ants96_temps_inner, axis=1)))
+    std_inner = np.std(resi_ants96_temps_inner, axis=1)
+    rms_std_inner = np.sqrt(np.mean(std_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(resi_ants96_temps_edge, axis=1)))
+    std_edge = np.std(resi_ants96_temps_edge, axis=1)
+    rms_std_edge = np.sqrt(np.mean(std_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner:.3g} K",
+            f"RMS STD inner = {rms_std_inner:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge:.3g} K",
+            f"RMS STD edge = {rms_std_edge:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -798,8 +837,8 @@ def comp_power():
     ax.legend(loc="lower left", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(0, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_simulation_calibrated_resi.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_simulation_calibrated_resi.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_simulation_calibrated_resi.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_simulation_calibrated_resi.png', dpi=300, facecolor='w')
     plt.show()
 
     ants_temps_uni_stack = np.hstack((ants_temps_uni_cali_inner, ants_temps_uni_cali_edge))
@@ -811,16 +850,20 @@ def comp_power():
     ax.plot(times / 3600, resi_ants_temps_uni_inner[:, 1:], color="#0072B2", linestyle="--")
     ax.plot(times / 3600, resi_ants_temps_uni_edge[:, 0], color="#E69F00", linestyle="-", label='edge elements')
     ax.plot(times / 3600, resi_ants_temps_uni_edge[:, 1:], color="#E69F00", linestyle="-")
-    std_inner = np.sqrt(np.mean(np.var(resi_ants_temps_uni_inner, axis=1)))
-    std_edge = np.sqrt(np.mean(np.var(resi_ants_temps_uni_edge, axis=1)))
+    # std_inner = np.sqrt(np.mean(np.var(resi_ants_temps_uni_inner, axis=1)))
+    std_inner = np.std(resi_ants_temps_uni_inner, axis=1)
+    rms_std_inner = np.sqrt(np.mean(std_inner ** 2))
+    # std_edge = np.sqrt(np.mean(np.var(resi_ants_temps_uni_edge, axis=1)))
+    std_edge = np.std(resi_ants_temps_uni_edge, axis=1)
+    rms_std_edge = np.sqrt(np.mean(std_edge ** 2))
     ax.text(0.20, 0.92,
-            f"relative std inner = {std_inner:.3g} K",
+            f"RMS STD inner = {rms_std_inner:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
     ax.text(0.20, 0.85,
-            f"relative std inner = {std_edge:.3g} K",
+            f"RMS STD edge = {rms_std_edge:.3g} K",
             transform=ax.transAxes,
             fontsize=text_fontsize,
             color='blue',
@@ -833,8 +876,8 @@ def comp_power():
     ax.legend(loc="lower left", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(0, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'results/xpol_anttemp_errors_calibrated_resi.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'results/xpol_anttemp_errors_calibrated_resi.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_errors_calibrated_resi.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/xpol_anttemp_errors_calibrated_resi.png', dpi=300, facecolor='w')
     plt.show()
 
 

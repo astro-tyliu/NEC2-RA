@@ -1371,7 +1371,7 @@ def _ant_coord_trans(nside, beam):
 
 
 def _random_antenna(
-        nr_samples, frq_cntr, nr_freqs=1, frq_step=1.0, rel_std=0.01, xpol=True, ypol=True, excite='X', ground=True,
+        nr_samples, frq_cntr, nr_freqs=1, frq_step=1.0, rel_std=0.01, freq_ref=None, xpol=True, ypol=True, excite='X', ground=True,
         save_necfile=False
 ):
     seed = 42
@@ -1458,7 +1458,7 @@ def _random_antenna(
         lba_model.arrayify(element=element, array_positions=np.array([[0, 0, 0]]))
 
         frqlist = _frq_cntr_step.aslist()
-        lba_model.segmentalize(segmentalize, 80.)
+        lba_model.segmentalize(segmentalize, freq_ref)
         if ground:
             lba_model.set_ground()
         # Number of segments in the part where there is the port should be odd and not less than 3.
@@ -1721,19 +1721,19 @@ def power_simulation():
         # eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
     
         nr_samples = 96
-        EEPs, _1, _2, _3 = _random_antenna(nr_samples, frq)
+        EEPs, _1, _2, _3 = _random_antenna(nr_samples, frq, freq_ref=80.)
         EEPs = np.abs(EEPs[:, 0, :, :, 0]) ** 2 + np.abs(EEPs[:, 0, :, :, 1]) ** 2
         EEPs_uni_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
         EEPs_norm_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
         _, beam0_single = _ant_coord_trans(nside, EEPs[0, :, :].T)
     
-        EEP_iso, _1, _2, _3 = _random_antenna(1, frq, rel_std=0.)
+        EEP_iso, _1, _2, _3 = _random_antenna(1, frq, rel_std=0., freq_ref=80.)
         EEP_iso = np.abs(EEP_iso[:, 0, :, :, 0]) ** 2 + np.abs(EEP_iso[:, 0, :, :, 1]) ** 2
         EEP_iso = np.squeeze(EEP_iso)
         _, beam_iso = _ant_coord_trans(nside, EEP_iso[:, :].T)
         beam_uni_iso = beam_iso / np.sum(beam_iso)
     
-        for i in range(96):
+        for i in tqdm(range(96)):
             _, beam = _ant_coord_trans(nside, eep96[i, :, :].T)
             _, beam_single = _ant_coord_trans(nside, EEPs[i, :, :].T)
             beam_uni = beam / np.sum(beam)
@@ -1764,6 +1764,7 @@ def power_simulation():
         ants_temps_norm_single = np.zeros((n_samples, nr_samples))
         ants_temps_uni_iso = np.zeros(n_samples)
         for i, t in enumerate(times):
+            print(i, t)
             (latitude, longitude, elevation) = (str(lat), str(lon), 0)
             ov = LFSMObserver()
             ov.lon = longitude
@@ -1816,8 +1817,8 @@ def single_antenna_simulation():
     eta0 = 377
 
     EEPs, EELs, imps, frqlist = _random_antenna(
-        nr_samples, frq_cntr, nr_freqs=nr_freqs, frq_step=frq_step, rel_std=0.0, xpol=True, ypol=True, excite='X',
-        ground=True, save_necfile=save_necfile, input_imp=input_imp
+        nr_samples, frq_cntr, nr_freqs=nr_freqs, frq_step=frq_step, rel_std=0.0, freq_ref=80., xpol=True, ypol=True,
+        excite='X', ground=True, save_necfile=save_necfile, input_imp=input_imp
     )
     hno = np.sqrt(np.abs(EELs[0].f_tht) ** 2 + np.abs(EELs[0].f_phi) ** 2)
     print(EEPs.shape)
@@ -1913,8 +1914,8 @@ if __name__ == '__main__':
     # normalization()
     # power_simulation()
     # single_antenna_simulation()
-    # same, msg = compare_npy_numeric("../general_materials/2_dual_xpol_16_f230_f0_s65_numa16_lofar_eels.npy",
-    #                                 "../general_materials/dual_xpol_16_f230_f0_s65_numa16_lofar_eels.npy",
+    # same, msg = compare_npy_numeric("../general_materials/dual_xpol_16_16_f230_f0_s65_numa16_EEP_2.npy",
+    #                                 "../general_materials/dual_xpol_16_16_f230_f0_s65_numa16_EEP.npy",
     #                                 rtol=1e-6, atol=1e-8)
     # print(same, msg)
 
