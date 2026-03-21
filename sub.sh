@@ -2,7 +2,7 @@
 #SBATCH --job-name=pynec_sim
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
-#SBATCH --time=72:00:00
+#SBATCH --time=96:00:00
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8G
 #SBATCH --exclude=compute-103

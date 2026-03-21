@@ -1,26 +1,32 @@
+import sys
+from time import time
+from datetime import datetime, timedelta
+
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
 import matplotlib as mpl
 mpl.use('AGG')
 from matplotlib import rcParams
 from matplotlib import pyplot as plt
-import pandas as pd
-from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire, ExecutionBlock, RadPatternSpec, impedanceRLC)
-from time import time
-from pygdsm import LFSMObserver
-from datetime import datetime, timedelta
+
+from scipy.interpolate import interp1d
 import healpy as hp
-from tqdm import tqdm
+from pygdsm import LFSMObserver
+from astropy import constants as const
+from astropy import units
 from astropy.time import Time
 from astropy.coordinates import EarthLocation
-import astropy.units as u
-from astropy.constants import c
-from scipy.interpolate import interp1d
-import sys
 
+from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire, ExecutionBlock, RadPatternSpec, impedanceRLC)
 
 np.set_printoptions(precision=4, linewidth=80)
+
+
 channel = int(sys.argv[1])
-raw_dir = '../raw_data/'
+RAW_DIR = '../raw_data/'
+DATA_PATH = '../general_materials/'
 
 
 def simulate_lofar(
@@ -33,7 +39,7 @@ def simulate_lofar(
     """
     if excite not in ['X', 'Y']:
         raise ValueError('Invalid param: "polar" must be "X" or "Y".')
-    print('Start ...')
+    print('Start ...', flush=True)
 
     # Save or not
     save_necfile = False
@@ -43,25 +49,26 @@ def simulate_lofar(
     save_EEP = True
 
     # Antenna params
-    puck_width = 0.09
-    puck_height = 1.7
-    ant_arm_len = 1.38  # the length of one stick
+    puck_width = 0.09  # 0.09 m
+    puck_height = 1.7  # 1.7 m. Confirmed by Tobia (by LOFAR people).
+    ant_arm_len = 1.38  # 1.38 m. The length of one stick
     proj_arm_len = ant_arm_len / np.sqrt(2)
-    wire_radius = 0.0005  # See doi.org/10.1117/12.2232419. And it has been confirmed by Tobia.
+    wire_radius = 0.0005  # 0.0005 m. See doi.org/10.1117/12.2232419. And it has been confirmed by Tobia.
     sep = 2.5 * wire_radius
 
     # Array params
-    arr_origin = np.loadtxt(raw_dir + 'Pos_LBA_SE607_local.txt', dtype=str)
+    arr_origin = np.loadtxt(RAW_DIR + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0] * 1
     arr_y = arr_pos[:, 1] * 1
     arr_z = np.zeros(len(arr_x))  # Assume they have the same height
     arr_pos = np.vstack((arr_x, arr_y, arr_z)).T
     num_ants = arr_pos.shape[0]
+    print(f'Shape of arr_x: {np.shape(arr_x)}', flush=True)
 
     # Simulation params
-    ext_thinwire = False  # Extended thin-wire is not needed according to the guideline of NEC2.
-    ds = np.load(raw_dir + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+    ext_thinwire = False  # Extended thin-wire is not needed according to the guideline of NEC2 in our case.
+    ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     freqs_mhz = ds['frequencies'] / 1e6
     if channel is False:
         sample_start = np.argmin(np.abs(freqs_mhz - sample_start))
@@ -80,7 +87,8 @@ def simulate_lofar(
     step_theta = 2.0
     nr_phis = 180
     step_phi = 2.0
-    segmentalize = 65  # A proper value according to the guideline of NEC2
+    # Segments at the reference frequency (80 MHz). 65 is a proper value according to the guideline of NEC2
+    segmentalize = 65
     if freq_ref is None:
         if sample_end is None:
             freq_ref = frq_cntr
@@ -88,6 +96,7 @@ def simulate_lofar(
             freq_ref = freqs_mhz[sample_end]
     _frq_cntr_step = FreqSteps('lin', nr_freqs, frq_cntr, step_freq)
 
+    # R = 700.0 Ohm, L = None, C = 15.0^(-12)
     # input admittance (See P.47 in "Calibration of the LOFAR Antennas", the thesis of Maria Krause in 2013)
     load_adm = impedanceRLC(_frq_cntr_step.aslist(MHz=False), R=700., L=None, C=15e-12, coupling='parallel',
                             imp_not_adm=False)
@@ -242,14 +251,11 @@ def simulate_lofar(
 def imp_ants():
     save_figure = False
 
-    xpol = np.load('results/dual_xpol_96_f44.9_s20_numa96_imp.npy')
-    # ypol = np.load('results/dual_ypol_96_f44.92_s101_numa96_imp.npy')
-    xpol_100 = np.load('results/dual_xpol_100_f44.9_s20_numa96_imp.npy')
-    # xpol = np.load('results/dual_xpol_f44.9_s20_numa96_imp.npy')
-    ypol = np.load('results/dual_ypol_f44.9_s20_numa96_imp.npy')
-    # xpol = np.load('results/dual_xpol_f60_s121_numa96.npy')
-    # ypol = np.load('results/dual_ypol_f60_s121_numa96.npy')
-    print(xpol)
+    # xpol_100 = np.load(f'{data_path}dual_xpol_96_100_f44.92_s101_numa96_imp.npy')
+    xpol = np.load(f'{DATA_PATH}dual_xpol_96_f44.92_s101_numa96_imp.npy')
+    ypol = np.load(f'{DATA_PATH}dual_ypol_96_f44.92_s101_numa96_imp.npy')
+    # print(xpol_100.shape, xpol.shape, ypol.shape)
+
     ants = np.arange(96)
 
     base_fontsize = 18
@@ -263,32 +269,30 @@ def imp_ants():
 
     self_xpol = np.real(np.diag(xpol[0, :, :]))
     self_ypol = np.real(np.diag(ypol[0, :, :]))
-    self_ypol = np.concatenate((self_ypol[:31], self_ypol[32:]))
-    self_xpol_100 = np.real(np.diag(xpol_100[0, :, :]))
+    # self_ypol = np.concatenate((self_ypol[:31], self_ypol[32:]))
     ax.plot(ants, np.diag(np.real(xpol[0, :, :])), 'y-.', label='x pol')
     ax.plot(ants, np.diag(np.real(ypol[0, :, :])), 'r-.', label='y pol')
-    ax.plot(ants, np.diag(np.real(xpol_100[0, :, :])), 'b-.', label='x pol (spacing * 100)')
+    # ax.plot(ants, np.diag(np.real(xpol_100[0, :, :])), 'b-.', label='x pol (spacing * 100)')
     text = f'x pol relative std = {format(np.std(self_xpol) / np.mean(self_xpol), ".2%")} \n' \
            f'y pol relative std = {format(np.std(self_ypol) / np.mean(self_ypol), ".2%")}'
-    ax.text(38, 12.43, text, fontsize=base_fontsize)
+    ax.text(36, 27.54, text, fontsize=base_fontsize)
     ax.set_xlabel('No. antennas')
     ax.set_ylabel(r'Impedance ($\Omega$)')
-    legend = ax.legend(loc='lower left')
-    legend.set_bbox_to_anchor((0, 0.07))
+    ax.legend(loc='lower left')
     if save_figure:
-        plt.savefig(f'results/lofar_imp.eps', dpi=300, facecolor='w')
+        plt.savefig(f'results/lofar_imp.pdf', dpi=300, facecolor='w')
     plt.show()
 
 
 def arr_layout(xx_autocor=None):
-    arr_origin = np.loadtxt(raw_dir + 'Pos_LBA_SE607_local.txt', dtype=str)
+    arr_origin = np.loadtxt(RAW_DIR + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_name = arr_origin[:, 0]
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0]
     arr_y = arr_pos[:, 1]
 
     if xx_autocor is None:
-        file_path = raw_dir + 'sid20240319T124804_SE607_n61_s285_XX_XY_YX_YY_xst.txt'
+        file_path = RAW_DIR + 'sid20240319T124804_SE607_n61_s285_XX_XY_YX_YY_xst.txt'
         df = pd.read_csv(file_path)
         xx_origin = np.array(df.iloc[6:6+96])
         print(df.iloc[7])
@@ -319,7 +323,7 @@ def power_antenna():
 
     # N(antennas*polarizations) * N(timings) * N(frequencies)
     # polarization - even: x, odd:y
-    d = np.load(raw_dir + 'SE607_20240430_093342_spw3_int1_dur60_sst.npy')
+    d = np.load(RAW_DIR + 'SE607_20240430_093342_spw3_int1_dur60_sst.npy')
     f_index = 230
     mean = np.mean(d, axis=1)
     std = np.std(d, axis=1)
@@ -392,7 +396,7 @@ def _load_data(data_set, f_index, polar):
     if data_set == 1:
         # N(antennas*polarizations) * N(timings) * N(frequencies)
         # polarization - even: x, odd:y
-        ds = np.load(raw_dir + 'SE607_20201202_115839_spw3_int600_dur86147_sst.npy')
+        ds = np.load(RAW_DIR + 'SE607_20201202_115839_spw3_int600_dur86147_sst.npy')
         data = ds[:, :, f_index]
         if polar == 'X':
             data = data[0::2, :]
@@ -402,7 +406,7 @@ def _load_data(data_set, f_index, polar):
             raise ValueError('Invalid param: "polar" must be "X" or "Y".')
         times = np.linspace(0, 24*3600, np.shape(data)[1], endpoint=False)
     elif data_set == 2:
-        ds = np.load(raw_dir + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+        ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
         # files = ds.files()  # heads
         times = ds['delta_secs'][:, 0]
         data = np.zeros((192, len(times)))
@@ -484,10 +488,10 @@ def comp_power():
     num_ants = np.sum(~either_ants_flags)
     data_2020 = data_2020[~either_ants_flags, :]
     data_2024 = data_2024[~either_ants_flags, :]
-    times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
-    times_2024 = Time(base_time_2024, format='iso', scale='utc') + times_2024 * u.second
+    times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * units.second
+    times_2024 = Time(base_time_2024, format='iso', scale='utc') + times_2024 * units.second
 
-    location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
+    location = EarthLocation(lon=11.917778 * units.deg, lat=57.393056 * units.deg)
     times_2020.location = location
     times_2024.location = location
 
@@ -579,7 +583,7 @@ def comp_power():
     index_broken = np.where(ants_broken)[0]
     index_invalid = np.array([31])
 
-    arr_origin = np.loadtxt(raw_dir + 'Pos_LBA_SE607_local.txt', dtype=str)
+    arr_origin = np.loadtxt(RAW_DIR + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_name = arr_origin[:, 0]
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0]
@@ -629,7 +633,7 @@ def comp_power():
 def statistical_analysis():
     # N(antennas*polarizations) * N(timings) * N(frequencies)
     # polarization - even: x, odd:y
-    d = np.load(raw_dir + 'SE607_20240430_093342_spw3_int1_dur60_sst.npy')
+    d = np.load(RAW_DIR + 'SE607_20240430_093342_spw3_int1_dur60_sst.npy')
     f_index = 230
     mean = np.mean(d, axis=1)
     std = np.std(d, axis=1)
@@ -648,7 +652,7 @@ def statistical_analysis():
 
     refer_antenna = 11
 
-    arr_origin = np.loadtxt(raw_dir + 'Pos_LBA_SE607_local.txt', dtype=str)
+    arr_origin = np.loadtxt(RAW_DIR + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_name = arr_origin[:, 0]
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0]
@@ -791,7 +795,7 @@ def directivity_phis():
 def lofar_directivity_phis():
     save_figure = False
 
-    arr_origin = np.loadtxt(raw_dir + 'Pos_LBA_SE607_local.txt', dtype=str)
+    arr_origin = np.loadtxt(RAW_DIR + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0]
     arr_y = arr_pos[:, 1]
@@ -1227,29 +1231,6 @@ def eels_ants():
     plt.show()
 
 
-def spherical_harmonics():
-    frq = 58.6
-
-    gsm_2016 = GlobalSkyModel16(freq_unit='MHz')
-    temp = gsm_2016.generate(frq)
-    gsm_2016.view(logged=True)
-    plt.show()
-
-    mean = np.mean(temp)
-    std = np.std(temp)
-    print(mean, std, np.max(temp))
-
-    from pygdsm import GlobalSkyModel
-    gsm = GlobalSkyModel(freq_unit='MHz')
-    temp = gsm.generate(frq)
-    gsm.view(logged=True)
-    plt.show()
-
-    mean = np.mean(temp)
-    std = np.std(temp)
-    print(mean, std, np.max(temp))
-
-
 def simulate_EEPs():
     save_necfile = False
     save_EEP = False
@@ -1295,7 +1276,7 @@ def simulate_EEPs():
     lba_model['ant_Y']['+Y'] = Wire(*ly34, wire_radius)
     lba_model['pucky']['LNAy_connect'].add_port(0.5, 'LNA_y', VoltageSource(1.0))
 
-    arr_origin = np.loadtxt(raw_dir + 'Pos_LBA_SE607_local.txt', dtype=str)
+    arr_origin = np.loadtxt(RAW_DIR + 'Pos_LBA_SE607_local.txt', dtype=str)
     arr_pos = arr_origin[:, 1:3].astype(float)
     arr_x = arr_pos[:, 0]
     arr_y = arr_pos[:, 1]
@@ -1356,8 +1337,6 @@ def _ant_coord_trans(nside, beam):
     gain_array = np.vstack((beam, pix))  # one-to-one match between gains and pixels
     # Ordering to interpolate (Constructing the corresponding relation with index)
     gain_array = gain_array[:, gain_array[1].argsort()]
-    # judge = -1
-    # repeat = np.array([], dtype=int)
     gain_fix = np.zeros(12 * n ** 2)
     counts = np.zeros(12 * n ** 2)
     for i in range(gain_array.shape[1]):
@@ -1377,7 +1356,7 @@ def _random_antenna(
     seed = 42
 
     # Antenna params
-    wire_radius = 0.0005  # See doi.org/10.1117/12.2232419. And it has been confirmed by Tobia.
+    wire_radius = 0.0005  # 0.0005. See doi.org/10.1117/12.2232419. And it has been confirmed by Tobia.
     sep = 2.5 * wire_radius
     pw = 0.090
     ph = 1.7
@@ -1502,7 +1481,7 @@ def time_test():
     data_2024 = np.arange(24)  # 替换为实际数据
 
     # 观测地点
-    location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
+    location = EarthLocation(lon=11.917778 * units.deg, lat=57.393056 * units.deg)
     times_2020.location = location
     times_2024.location = location
 
@@ -1550,8 +1529,8 @@ def normalization():
     polar = 'X'
     base_time_2020 = '2020-12-02 11:58:39.000'
     data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
-    times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * u.second
-    location = EarthLocation(lon=11.917778 * u.deg, lat=57.393056 * u.deg)
+    times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * units.second
+    location = EarthLocation(lon=11.917778 * units.deg, lat=57.393056 * units.deg)
     times_2020.location = location
     lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
     lst_grid = np.linspace(0, 24, num_grids)
@@ -1607,8 +1586,8 @@ def normalization():
 
     times = np.linspace(0, 24*3600, 2000, endpoint=False)
     base_time = '2020-12-02 11:58:39.000'
-    times = Time(base_time, format='iso', scale='utc') + times * u.second
-    location = EarthLocation(lon=lon * u.deg, lat=lat * u.deg)
+    times = Time(base_time, format='iso', scale='utc') + times * units.second
+    location = EarthLocation(lon=lon * units.deg, lat=lat * units.deg)
     times.location = location
     lst = times.sidereal_time('mean').hour  # Transform to sidereal time
     base_time = times.datetime[np.where(lst == np.min(lst))[0]][0]
@@ -1688,7 +1667,7 @@ def power_simulation():
     input_dir = '../general_materials/'
     output_dir = '../paper_materials/'
 
-    ds = np.load(raw_dir + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+    ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     freqs_mhz = ds['frequencies'] / 1e6
     ch_low = np.argmin(np.abs(freqs_mhz - 30))
     ch_high = np.argmin(np.abs(freqs_mhz - 80))
@@ -1747,8 +1726,8 @@ def power_simulation():
     
         times = np.linspace(0, 24 * 3600, 1000, endpoint=False)
         base_time = '2020-12-02 11:58:39.000'
-        times = Time(base_time, format='iso', scale='utc') + times * u.second
-        location = EarthLocation(lon=lon * u.deg, lat=lat * u.deg)
+        times = Time(base_time, format='iso', scale='utc') + times * units.second
+        location = EarthLocation(lon=lon * units.deg, lat=lat * units.deg)
         times.location = location
         lst = times.sidereal_time('mean').hour  # Transform to sidereal time
         base_time = times.datetime[np.where(lst == np.min(lst))[0]][0]
@@ -1865,7 +1844,123 @@ def single_antenna_simulation():
 
     # beam_zenith = np.append(beam_zenith, beam_power[0, 0])
     beam_zenith = beam_power[:, 0, 0]
-    area_eff_zenith = beam_zenith * (c.value * 1e-6 / frqlist) ** 2 / (4 * np.pi)
+    area_eff_zenith = beam_zenith * (const.c.value * 1e-6 / frqlist) ** 2 / (4 * np.pi)
+
+
+def power_diff():
+    save_figure = False
+
+    num_grids = 2000
+
+    f_index = 230  # f = 44.92 MHz
+    polar = 'X'
+    base_time_2020 = '2020-12-02 11:58:39.000'
+    base_time_2024 = '2024-09-16 18:08:34.000'
+
+    for mode in ['a', 'b']:
+        data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
+        data_2024, times_2024, origin_flags_2024 = _load_data(2, f_index, polar)
+
+        origin_flags_2024[31] = True  # The data from the antenna 31 in data_2024 are invalid
+        times_flags = np.full(num_grids, False, dtype=bool)
+        either_ants_flags = origin_flags_2020 + origin_flags_2024
+        num_ants = np.sum(~either_ants_flags)
+        data_2020 = data_2020[~either_ants_flags, :]
+        data_2024 = data_2024[~either_ants_flags, :]
+        if mode == 'a':
+            pass
+        else:
+            times_flags[:int(num_grids / 2)] = True
+
+        times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * units.second
+        times_2024 = Time(base_time_2024, format='iso', scale='utc') + times_2024 * units.second
+
+        location = EarthLocation(lon=11.917778 * units.deg, lat=57.393056 * units.deg)
+        times_2020.location = location
+        times_2024.location = location
+
+        lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
+        lst_2024 = times_2024.sidereal_time('mean').hour  # Transform to sidereal time
+
+        lst_grid = np.linspace(0, 24, num_grids)
+        interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
+        interp_2024 = interp1d(lst_2024, data_2024, kind='linear', fill_value="extrapolate")
+
+        data_interp_2020 = interp_2020(lst_grid)
+        data_interp_2024 = interp_2024(lst_grid)
+        lst_grid = lst_grid[~times_flags]
+        data_interp_2020 = data_interp_2020[:, ~times_flags]
+        data_interp_2024 = data_interp_2024[:, ~times_flags]
+        print(mode, data_interp_2020.shape, data_interp_2024.shape)
+
+        base_fontsize = 26
+        config = {
+            "font.family": 'Times New Roman',  # 设置字体类型
+            "font.size": base_fontsize,
+            "mathtext.fontset": 'stix',
+        }
+        rcParams.update(config)
+
+        if mode == 'a':
+            ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
+            ks_2024 = np.mean(data_interp_2024) / np.mean(data_interp_2024, axis=1)
+            data_interp_2020 = data_interp_2020 * ks_2020[:, None]
+            data_interp_2024 = data_interp_2024 * ks_2024[:, None]
+
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.plot(lst_grid, data_interp_2020.T)
+            ax.set_title(str(num_ants) + r' actual LBA x-pol antennas in the $\mathbf{dataset\ I}$ (normalized)',
+                         fontsize=22)
+            ax.set_xlabel('Time over 24h')
+            ax.set_ylabel('Auto-correlated power')
+            if save_figure:
+                plt.savefig(f'results/24hautocorr_joint_norm_2020.pdf', dpi=300, facecolor='w')
+                plt.savefig(f'results/24hautocorr_joint_norm_2020.png', dpi=300, facecolor='w')
+            plt.show()
+
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.plot(lst_grid, data_interp_2024.T)
+            ax.set_title(str(num_ants) + r' actual LBA x-pol antennas in the $\mathbf{dataset\ II}$ (normalized)',
+                         fontsize=22)
+            ax.set_xlabel('Time over 24h')
+            ax.set_ylabel('Auto-correlated power')
+            if save_figure:
+                plt.savefig(f'results/24hautocorr_joint_norm_2024.pdf', dpi=300, facecolor='w')
+                plt.savefig(f'results/24hautocorr_joint_norm_2024.png', dpi=300, facecolor='w')
+            plt.show()
+
+        else:
+            data_interp_total = np.vstack((data_interp_2020, data_interp_2024))
+            ks_total = np.mean(data_interp_total) / np.mean(data_interp_total, axis=1)
+            data_interp_2020 = data_interp_2020 * ks_total[:num_ants, None]
+            data_interp_2024 = data_interp_2024 * ks_total[num_ants:, None]
+            delta_data = data_interp_2024 - data_interp_2020
+
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.plot(lst_grid, delta_data.T / data_interp_2020.T)
+            ax.set_title(r'Relative difference between the $\mathbf{dataset\ I}$ and $\mathbf{dataset\ II}$',
+                         fontsize=22)
+            ax.set_xlabel('Time over 12h')
+            ax.set_ylabel('Relative power difference')
+            if save_figure:
+                plt.savefig(f'results/12hautocorr_reldiff.pdf', dpi=300, facecolor='w')
+                plt.savefig(f'results/12hautocorr_reldiff.png', dpi=300, facecolor='w')
+            plt.show()
+
+            rescaled_delta_data = delta_data / data_interp_2020
+            rescaled_delta_data = rescaled_delta_data - np.mean(rescaled_delta_data, axis=0)[None, :]
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.plot(lst_grid, rescaled_delta_data.T)
+            ax.set_title(
+                r'Relative difference between the $\mathbf{dataset\ I}$ and $\mathbf{dataset\ II}$ (slope removed)',
+                fontsize=22)
+            ax.set_ylim([-0.03, 0.03])
+            ax.set_xlabel('Time over 12h')
+            ax.set_ylabel('Rescaled relative difference')
+            if save_figure:
+                plt.savefig(f'results/12hautocorr_rescaled_reldiff.pdf', dpi=300, facecolor='w')
+                plt.savefig(f'results/12hautocorr_rescaled_reldiff.png', dpi=300, facecolor='w')
+            plt.show()
 
 
 def compare_npy_numeric(file1, file2, rtol=1e-6, atol=1e-8):
@@ -1889,6 +1984,8 @@ def compare_npy_numeric(file1, file2, rtol=1e-6, atol=1e-8):
         f"rtol={rtol}, atol={atol}"
     )
 
+    print(ok, msg)
+
     return ok, msg
 
 
@@ -1907,9 +2004,7 @@ if __name__ == '__main__':
     # directivity_frqs()
     # eels_phis()
     # eels_ants()
-    # spherical_harmonics()
     # simulate_EEPs()
-    # bbb = single_antenna()
     # time_test()
     # normalization()
     # power_simulation()
@@ -1917,7 +2012,5 @@ if __name__ == '__main__':
     # same, msg = compare_npy_numeric("../general_materials/dual_xpol_16_16_f230_f0_s65_numa16_EEP_2.npy",
     #                                 "../general_materials/dual_xpol_16_16_f230_f0_s65_numa16_EEP.npy",
     #                                 rtol=1e-6, atol=1e-8)
-    # print(same, msg)
-
     et = time()
     print("time: %.2f seconds" % (et - st))
