@@ -1660,7 +1660,12 @@ def normalization():
     print(total_mape1, total_mape2)
 
 
-def power_simulation():
+def power_simulation(ch):
+    """
+    Power simulation for a single channel. Supports sbatch multi-process:
+    each task receives a different ch and runs in parallel.
+    ch: channel index (subscript in freqs_mhz)
+    """
     # LOFAR: x to east (several degrees difference), y to north (several degrees difference), z to up
     # healpix: x to up, y to east, z to north
     save = True
@@ -1672,116 +1677,113 @@ def power_simulation():
     ch_low = np.argmin(np.abs(freqs_mhz - 30))
     ch_high = np.argmin(np.abs(freqs_mhz - 80))
 
-    # ch_list = np.arange(ch_low+2, ch_high, 3)
-    ch_list = np.array([230])
-    for ch in ch_list:
-        print(ch_low, ch, ch_high)
-        frq = freqs_mhz[ch]
-        nside = 256  # at least 256 to avoid repetition of pixels
-        lon = 11.917778
-        lat = 57.393056
-    
-        # nr_thetas = 46
-        # nr_phis = 180
-        # thetas = np.linspace(0, 90, nr_thetas, endpoint=True) * np.pi / 180
-        # phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
-    
-        eep96 = np.load(f'{input_dir}dual_xpol_96_f230_f0_s65_numa96_EEP.npy')[:, 0, :, :, :]
-        # _1, _2, origin_flags = _load_data(2, f_index, 'X')
-        # index_invalid = np.sum(~origin_flags[:31])
-        # eep61 = np.load(f'{data_path}dual_xpol_62_broken_f44.92_s101_numa62_EEP.npy')[:, 0, :, :, :]
-        # eep61 = np.delete(eep61, index_invalid, axis=0)
-    
-        eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
-        eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))
-        eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))
-        _, beam960 = _ant_coord_trans(nside, eep96[0, :, :].T)
-        # eep61 = np.abs(eep61[:, :, :, 0]) ** 2 + np.abs(eep61[:, :, :, 1]) ** 2
-        # eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
-    
-        nr_samples = 96
-        EEPs, _1, _2, _3 = _random_antenna(nr_samples, frq, freq_ref=80.)
-        EEPs = np.abs(EEPs[:, 0, :, :, 0]) ** 2 + np.abs(EEPs[:, 0, :, :, 1]) ** 2
-        EEPs_uni_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
-        EEPs_norm_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
-        _, beam0_single = _ant_coord_trans(nside, EEPs[0, :, :].T)
-    
-        EEP_iso, _1, _2, _3 = _random_antenna(1, frq, rel_std=0., freq_ref=80.)
-        EEP_iso = np.abs(EEP_iso[:, 0, :, :, 0]) ** 2 + np.abs(EEP_iso[:, 0, :, :, 1]) ** 2
-        EEP_iso = np.squeeze(EEP_iso)
-        _, beam_iso = _ant_coord_trans(nside, EEP_iso[:, :].T)
-        beam_uni_iso = beam_iso / np.sum(beam_iso)
-    
-        for i in tqdm(range(96)):
-            _, beam = _ant_coord_trans(nside, eep96[i, :, :].T)
-            _, beam_single = _ant_coord_trans(nside, EEPs[i, :, :].T)
-            beam_uni = beam / np.sum(beam)
-            beam_norm = beam / np.sum(beam960)
-            beam_uni_single = beam_single / np.sum(beam_single)
-            beam_norm_single = beam_single / np.sum(beam0_single)
-            eep96_uni_healpix[i, :] = beam_uni
-            eep96_norm_healpix[i, :] = beam_norm
-            EEPs_uni_single_healpix[i, :] = beam_uni_single
-            EEPs_norm_single_healpix[i, :] = beam_norm_single
-    
-        times = np.linspace(0, 24 * 3600, 1000, endpoint=False)
-        base_time = '2020-12-02 11:58:39.000'
-        times = Time(base_time, format='iso', scale='utc') + times * units.second
-        location = EarthLocation(lon=lon * units.deg, lat=lat * units.deg)
-        times.location = location
-        lst = times.sidereal_time('mean').hour  # Transform to sidereal time
-        base_time = times.datetime[np.where(lst == np.min(lst))[0]][0]
-    
-        n_samples = 144
-        # times = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
-        time_offsets = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
-        times = np.array([base_time + timedelta(seconds=s) for s in time_offsets])
-        # time_step = 1400 // n_samples
-        ants96_temps_uni = np.zeros((n_samples, 96))
-        ants96_temps_norm = np.zeros((n_samples, 96))
-        ants_temps_uni_single = np.zeros((n_samples, nr_samples))
-        ants_temps_norm_single = np.zeros((n_samples, nr_samples))
-        ants_temps_uni_iso = np.zeros(n_samples)
-        for i, t in enumerate(times):
-            print(i, t)
-            (latitude, longitude, elevation) = (str(lat), str(lon), 0)
-            ov = LFSMObserver()
-            ov.lon = longitude
-            ov.lat = latitude
-            ov.elev = elevation
-            # minute = (base_time.minute + t * time_step) % 60
-            # hour = (base_time.hour + (base_time.minute + t * time_step) // 60) % 24
-            # day = base_time.day + (base_time.hour + (base_time.minute + t * time_step) // 60) // 24
-            ov.date = datetime(2020, 12, t.day, t.hour, t.minute, t.second)  # ?????????????? base_time.second
-            sky = ov.generate(frq)
-            sky = hp.pixelfunc.ud_grade(sky, nside)
-    
-            obs_uni = sky[None, :] * eep96_uni_healpix
-            obs_norm = sky[None, :] * eep96_norm_healpix
-            obs_uni_single = sky[None, :] * EEPs_uni_single_healpix
-            obs_norm_single = sky[None, :] * EEPs_norm_single_healpix
-            # obs61_uni = sky[None, :] * eep61_uni_healpix
-            obs_uni_iso = sky * beam_uni_iso
-            ant_temp_uni = np.sum(obs_uni, axis=1)
-            ant_temp_norm = np.sum(obs_norm, axis=1)
-            ant_temp_uni_single = np.sum(obs_uni_single, axis=1)
-            ant_temp_norm_single = np.sum(obs_norm_single, axis=1)
-            # ant_temp61_uni = np.sum(obs61_uni, axis=1)
-            ant_temp_uni_iso = np.sum(obs_uni_iso)
-            ants96_temps_uni[i, :] = ant_temp_uni
-            ants96_temps_norm[i, :] = ant_temp_norm
-            ants_temps_uni_single[i, :] = ant_temp_uni_single
-            ants_temps_norm_single[i, :] = ant_temp_norm_single
-            # ants61_temps_uni[t, :] = ant_temp61_uni
-            ants_temps_uni_iso[i] = ant_temp_uni_iso
-    
-        # times, ants96_temps_norm, ants_temps_uni_iso, ants96_temps_uni,
-        # ants_temps_norm_single, ants_temps_uni_single
-        if save:
-            np.savez(f'{output_dir}power_simulation_{ch}.npz',
-                     times=times, ants_temps_uni_iso=ants_temps_uni_iso,
-                     ants96_temps_norm=ants96_temps_norm, ants96_temps_uni=ants96_temps_uni,
-                     ants_temps_norm_single=ants_temps_norm_single, ants_temps_uni_single=ants_temps_uni_single)
+    print(ch_low, ch, ch_high)
+    frq = freqs_mhz[ch]
+    nside = 256  # at least 256 to avoid repetition of pixels
+    lon = 11.917778
+    lat = 57.393056
+
+    # nr_thetas = 46
+    # nr_phis = 180
+    # thetas = np.linspace(0, 90, nr_thetas, endpoint=True) * np.pi / 180
+    # phis = np.linspace(0, 360, nr_phis, endpoint=False) * np.pi / 180
+
+    eep96 = np.load(f'{input_dir}dual_xpol_96_f{ch}_f0_s65_numa96_EEP.npy')[:, 0, :, :, :]
+    # _1, _2, origin_flags = _load_data(2, f_index, 'X')
+    # index_invalid = np.sum(~origin_flags[:31])
+    # eep61 = np.load(f'{data_path}dual_xpol_62_broken_f44.92_s101_numa62_EEP.npy')[:, 0, :, :, :]
+    # eep61 = np.delete(eep61, index_invalid, axis=0)
+
+    eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
+    eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))
+    eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))
+    _, beam960 = _ant_coord_trans(nside, eep96[0, :, :].T)
+    # eep61 = np.abs(eep61[:, :, :, 0]) ** 2 + np.abs(eep61[:, :, :, 1]) ** 2
+    # eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
+
+    nr_samples = 96
+    EEPs, _1, _2, _3 = _random_antenna(nr_samples, frq, freq_ref=80.)
+    EEPs = np.abs(EEPs[:, 0, :, :, 0]) ** 2 + np.abs(EEPs[:, 0, :, :, 1]) ** 2
+    EEPs_uni_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
+    EEPs_norm_single_healpix = np.zeros((nr_samples, 12 * nside ** 2))
+    _, beam0_single = _ant_coord_trans(nside, EEPs[0, :, :].T)
+
+    EEP_iso, _1, _2, _3 = _random_antenna(1, frq, rel_std=0., freq_ref=80.)
+    EEP_iso = np.abs(EEP_iso[:, 0, :, :, 0]) ** 2 + np.abs(EEP_iso[:, 0, :, :, 1]) ** 2
+    EEP_iso = np.squeeze(EEP_iso)
+    _, beam_iso = _ant_coord_trans(nside, EEP_iso[:, :].T)
+    beam_uni_iso = beam_iso / np.sum(beam_iso)
+
+    for i in tqdm(range(96)):
+        _, beam = _ant_coord_trans(nside, eep96[i, :, :].T)
+        _, beam_single = _ant_coord_trans(nside, EEPs[i, :, :].T)
+        beam_uni = beam / np.sum(beam)
+        beam_norm = beam / np.sum(beam960)
+        beam_uni_single = beam_single / np.sum(beam_single)
+        beam_norm_single = beam_single / np.sum(beam0_single)
+        eep96_uni_healpix[i, :] = beam_uni
+        eep96_norm_healpix[i, :] = beam_norm
+        EEPs_uni_single_healpix[i, :] = beam_uni_single
+        EEPs_norm_single_healpix[i, :] = beam_norm_single
+
+    times = np.linspace(0, 24 * 3600, 1000, endpoint=False)
+    base_time = '2020-12-02 11:58:39.000'
+    times = Time(base_time, format='iso', scale='utc') + times * units.second
+    location = EarthLocation(lon=lon * units.deg, lat=lat * units.deg)
+    times.location = location
+    lst = times.sidereal_time('mean').hour  # Transform to sidereal time
+    base_time = times.datetime[np.where(lst == np.min(lst))[0]][0]
+
+    n_samples = 144
+    # times = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
+    time_offsets = np.linspace(0, 24 * 3600, n_samples, endpoint=False)
+    times = np.array([base_time + timedelta(seconds=s) for s in time_offsets])
+    # time_step = 1400 // n_samples
+    ants96_temps_uni = np.zeros((n_samples, 96))
+    ants96_temps_norm = np.zeros((n_samples, 96))
+    ants_temps_uni_single = np.zeros((n_samples, nr_samples))
+    ants_temps_norm_single = np.zeros((n_samples, nr_samples))
+    ants_temps_uni_iso = np.zeros(n_samples)
+    for i, t in enumerate(times):
+        print(i, t)
+        (latitude, longitude, elevation) = (str(lat), str(lon), 0)
+        ov = LFSMObserver()
+        ov.lon = longitude
+        ov.lat = latitude
+        ov.elev = elevation
+        # minute = (base_time.minute + t * time_step) % 60
+        # hour = (base_time.hour + (base_time.minute + t * time_step) // 60) % 24
+        # day = base_time.day + (base_time.hour + (base_time.minute + t * time_step) // 60) // 24
+        ov.date = datetime(2020, 12, t.day, t.hour, t.minute, t.second)  # ?????????????? base_time.second
+        sky = ov.generate(frq)
+        sky = hp.pixelfunc.ud_grade(sky, nside)
+
+        obs_uni = sky[None, :] * eep96_uni_healpix
+        obs_norm = sky[None, :] * eep96_norm_healpix
+        obs_uni_single = sky[None, :] * EEPs_uni_single_healpix
+        obs_norm_single = sky[None, :] * EEPs_norm_single_healpix
+        # obs61_uni = sky[None, :] * eep61_uni_healpix
+        obs_uni_iso = sky * beam_uni_iso
+        ant_temp_uni = np.sum(obs_uni, axis=1)
+        ant_temp_norm = np.sum(obs_norm, axis=1)
+        ant_temp_uni_single = np.sum(obs_uni_single, axis=1)
+        ant_temp_norm_single = np.sum(obs_norm_single, axis=1)
+        # ant_temp61_uni = np.sum(obs61_uni, axis=1)
+        ant_temp_uni_iso = np.sum(obs_uni_iso)
+        ants96_temps_uni[i, :] = ant_temp_uni
+        ants96_temps_norm[i, :] = ant_temp_norm
+        ants_temps_uni_single[i, :] = ant_temp_uni_single
+        ants_temps_norm_single[i, :] = ant_temp_norm_single
+        # ants61_temps_uni[t, :] = ant_temp61_uni
+        ants_temps_uni_iso[i] = ant_temp_uni_iso
+
+    # times, ants96_temps_norm, ants_temps_uni_iso, ants96_temps_uni,
+    # ants_temps_norm_single, ants_temps_uni_single
+    if save:
+        np.savez(f'{output_dir}power_simulation_{ch}.npz',
+                 times=times, ants_temps_uni_iso=ants_temps_uni_iso,
+                 ants96_temps_norm=ants96_temps_norm, ants96_temps_uni=ants96_temps_uni,
+                 ants_temps_norm_single=ants_temps_norm_single, ants_temps_uni_single=ants_temps_uni_single)
 
 
 def single_antenna_simulation():
@@ -1992,8 +1994,8 @@ def compare_npy_numeric(file1, file2, rtol=1e-6, atol=1e-8):
 if __name__ == '__main__':
     st = time()
     # arr_layout()
-    simulate_lofar(channel, sample_end=None, channel=True, freq_ref=80., xpol=True, ypol=True, excite='X', ground=True,
-                   special=None)
+    # simulate_lofar(channel, sample_end=None, channel=True, freq_ref=80., xpol=True, ypol=True, excite='X', ground=True,
+    #                special=None)
     # imp_ants()
     # power_antenna()
     # power_time()
@@ -2007,7 +2009,7 @@ if __name__ == '__main__':
     # simulate_EEPs()
     # time_test()
     # normalization()
-    # power_simulation()
+    power_simulation(channel)
     # single_antenna_simulation()
     # same, msg = compare_npy_numeric("../general_materials/dual_xpol_16_16_f230_f0_s65_numa16_EEP_2.npy",
     #                                 "../general_materials/dual_xpol_16_16_f230_f0_s65_numa16_EEP.npy",
