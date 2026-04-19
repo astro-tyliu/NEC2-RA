@@ -1695,8 +1695,8 @@ def power_simulation(ch):
     # eep61 = np.delete(eep61, index_invalid, axis=0)
 
     eep96 = np.abs(eep96[:, :, :, 0]) ** 2 + np.abs(eep96[:, :, :, 1]) ** 2
-    eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))
-    eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))
+    eep96_uni_healpix = np.zeros((96, 12 * nside ** 2))  # Normalized beam
+    eep96_norm_healpix = np.zeros((96, 12 * nside ** 2))  # Normalized beam by the beam in a reference frequency
     _, beam960 = _ant_coord_trans(nside, eep96[0, :, :].T)
     # eep61 = np.abs(eep61[:, :, :, 0]) ** 2 + np.abs(eep61[:, :, :, 1]) ** 2
     # eep61_uni_healpix = np.zeros((61, 12 * nside ** 2))
