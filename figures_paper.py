@@ -5,8 +5,10 @@ from tqdm import tqdm
 # mpl.use('AGG')
 from matplotlib import rcParams
 from matplotlib import pyplot as plt
+from matplotlib.colors import SymLogNorm, LogNorm
 
 from scipy.interpolate import interp1d
+from scipy.ndimage import median_filter
 from astropy import units
 from astropy.time import Time
 from astropy.coordinates import EarthLocation
@@ -1096,6 +1098,288 @@ def func_tmp():
     plt.show()
 
 
+def _mask_out_of_band(raw_data, freqs_mhz, min_freq=30.0, max_freq=80.0):
+    """
+    Mask out data outside the specified frequency band.
+
+    Parameters:
+    raw_data (numpy.ndarray): 2D array of raw visibility data (Time, Freq).
+    freqs_mhz (numpy.ndarray): 1D array of frequencies in MHz.
+    min_freq (float): Minimum frequency to keep.
+    max_freq (float): Maximum frequency to keep.
+
+    Returns:
+    numpy.ma.MaskedArray: Data with out-of-band frequencies masked.
+    """
+    # Initialize a masked array with no mask initially
+    masked_data = np.ma.masked_array(raw_data, mask=False)
+
+    # Create boolean mask for out-of-band channels
+    out_of_band_mask = (freqs_mhz < min_freq) | (freqs_mhz > max_freq)
+
+    # Apply mask to all time bins for the out-of-band frequency channels
+    masked_data[:, out_of_band_mask] = np.ma.masked
+
+    return masked_data
+
+
+def _remove_rfi_time_axis(masked_data, time_window_bins=5, threshold_sigma=7.0):
+    """
+    Robust RFI removal using a sliding median filter and Median Absolute Deviation (MAD).
+    Processes data channel by channel to account for bandpass shape.
+
+Parameters:
+    -----------
+    masked_data : numpy.ma.MaskedArray
+        2D array of visibility data (Time x Frequency) with initial band masks applied.
+    time_window_bins : int, optional
+        Number of time bins used for the sliding median filter. Represents the temporal scale
+        of the background model. Default is 5.
+    threshold_sigma : float, optional
+        The clipping threshold based on equivalent Gaussian standard deviations (derived from MAD).
+        Default is 7.0.
+
+    Returns:
+    --------
+    numpy.ma.MaskedArray
+        The visibility data with newly generated masks for wideband burst RFI (e.g., lightning).
+    """
+    # Copy data to avoid modifying the original array
+    cleaned_data = masked_data.copy()
+    n_times, n_freqs = cleaned_data.shape
+
+    full_background = np.zeros_like(cleaned_data.data)
+
+    for f in range(n_freqs):
+        # Skip if the entire frequency channel is already masked (e.g., out of band)
+        if cleaned_data[:, f].mask.all():
+            continue
+
+        channel_data = cleaned_data[:, f].data
+
+        # 1. Background modeling: Sliding median filter along the time axis
+        # This isolates the slow-varying sky and instrument background
+        background = median_filter(channel_data, size=time_window_bins)
+
+        full_background[:, f] = background
+
+        # 2. Flattening: Subtract the background to get zero-mean residuals
+        residual = channel_data - background
+
+        # 3. Robust noise estimation: Calculate MAD
+        median_res = np.median(residual)
+        mad = np.median(np.abs(residual - median_res))
+
+        # Prevent zero-division or thresholding issues if channel is artificially flat
+        if mad == 0:
+            continue
+
+        # 4. Define threshold: Convert MAD to equivalent standard deviation
+        sigma_equiv = 1.4826 * mad
+        threshold = threshold_sigma * sigma_equiv
+
+        # 5. Flag RFI: Mark pixels exceeding the robust threshold
+        rfi_mask = np.abs(residual) > threshold
+        cleaned_data.mask[:, f] |= rfi_mask
+
+    return cleaned_data, full_background
+
+
+def _remove_rfi_freq_axis(masked_data, freq_window_bins=15, threshold_sigma=7.0):
+    """
+    Removes narrowband continuous RFI by flattening the bandpass and scanning the frequency axis.
+    Must be executed AFTER the time-axis broadband RFI mitigation to avoid cross-contamination.
+
+    Parameters:
+    -----------
+    masked_data : numpy.ma.MaskedArray
+        2D array of visibility data that has ALREADY been cleaned of wideband bursts
+        (i.e., the output from the time-axis mitigation step).
+    freq_window_bins : int, optional
+        Number of frequency channels used for the sliding median filter to account for
+        residual bandpass ripples. Default is 15.
+    threshold_sigma : float, optional
+        The clipping threshold based on equivalent Gaussian standard deviations. Default is 7.0.
+
+    Returns:
+    --------
+    numpy.ma.MaskedArray
+        The visibility data with additional masks covering narrowband continuous wave RFI.
+    """
+    cleaned_data = masked_data.copy()
+    n_times, n_freqs = cleaned_data.shape
+
+    full_interpolated_spectrum = np.zeros_like(cleaned_data.data)
+    full_local_background = np.zeros_like(cleaned_data.data)
+
+    # 1. Isolate the static instrument response and sky spectrum (The Fingerprint)
+    # Using np.ma.median ensures previously flagged broadband RFI does not bias the bandpass model
+    bandpass_model = np.ma.median(cleaned_data, axis=0)
+
+    for t in range(n_times):
+        if cleaned_data[t, :].mask.all():
+            continue
+
+        time_slice = cleaned_data[t, :].data
+        slice_mask = cleaned_data[t, :].mask
+
+        # 2. Flatten the frequency cliff to create a zero-mean baseline
+        flattened_spectrum = time_slice - bandpass_model.data
+
+        # 3. Temporarily patch the "pits" (flagged broadband RFI) before spatial filtering
+        # This prevents scipy.ndimage from leaking RFI energy into the local background model
+        valid_idx = ~slice_mask
+        if np.sum(valid_idx) < 2:
+            continue
+
+        freq_indices = np.arange(n_freqs)
+        interpolated_spectrum = np.interp(
+            freq_indices,
+            freq_indices[valid_idx],
+            flattened_spectrum[valid_idx]
+        )
+
+        full_interpolated_spectrum[t, :] = interpolated_spectrum
+
+        # 4. Extract local baseline to account for any residual bandpass ripples
+        local_background = median_filter(interpolated_spectrum, size=freq_window_bins, mode='reflect')
+        residual = interpolated_spectrum - local_background
+
+        full_local_background[t, :] = local_background
+
+        # 5. Robust noise estimation strictly on physically valid pixels
+        median_res = np.median(residual[valid_idx])
+        mad = np.median(np.abs(residual[valid_idx] - median_res))
+
+        if mad == 0:
+            continue
+
+        # 6. Isolate and flag narrowband spikes
+        sigma_equiv = 1.4826 * mad
+        threshold = threshold_sigma * sigma_equiv
+        rfi_mask = np.abs(residual) > threshold
+
+        cleaned_data.mask[t, :] |= rfi_mask
+
+    return cleaned_data, full_interpolated_spectrum, full_local_background
+
+
+# def _plot_waterfall(
+#         data, x_axis, y_axis, save_figure=None, show_figure=None, title=None, file_dir='../results/waterfalls/',
+#         filename=None
+# ):
+#     """
+#     Plots and optionally saves a waterfall visualization of the provided 2D array.
+#     """
+#     # Hardcoded font and plot configurations
+#     base_fontsize = 30
+#     config = {
+#         "font.family": 'Times New Roman',
+#         "font.size": base_fontsize,
+#         "mathtext.fontset": 'stix',
+#     }
+#     rcParams.update(config)
+#
+#     # Calculate image extent based on axis arrays
+#     plot_extent = [x_axis.min(), x_axis.max(), y_axis.max(), y_axis.min()]
+#
+#     fig, ax = plt.subplots(figsize=(14, 8))
+#
+#     # Plotting data in log10 scale
+#     im = ax.imshow(np.log10(data), aspect='auto', extent=plot_extent, cmap='viridis')
+#
+#     # Colorbar configuration
+#     cbar = fig.colorbar(im, ax=ax)
+#     cbar.set_label(r'$\log_{10}(\mathrm{Intensity})$')
+#
+#     # Hardcoded ticks and labels
+#     ax.set_xticks([40, 50, 60, 70])
+#     ax.set_yticks([0, 4, 8, 12, 16, 20])
+#     ax.set_xlabel('Frequency (MHz)')
+#     ax.set_ylabel('Time (Hours)')
+#
+#     # Optional Title
+#     if title is not None:
+#         ax.set_title(title)
+#
+#     fig.tight_layout()
+#
+#     # Optional Save
+#     if save_figure and filename is not None:
+#         fig.savefig(file_dir + filename, bbox_inches='tight', dpi=300)
+#
+#     # Optional Show
+#     if show_figure:
+#         plt.show()
+#
+#     # Free memory
+#     plt.close(fig)
+
+
+def _plot_waterfall(data, x_axis, y_axis, use_symlog=False, linthresh=10000000.0, save_figure=None, show_figure=None,
+                   title=None, file_dir='../results/waterfalls/', filename=None):
+    """
+    Plots and optionally saves a waterfall visualization.
+    Supports standard Log10 scale (for raw data) and SymLog scale (for residual/flattened data containing negative values).
+
+    Parameters:
+    data, x_axis, y_axis: Required data arrays.
+    use_symlog (bool): If True, uses SymLogNorm. If False, uses standard LogNorm.
+    linthresh (float): The range within which the plot is linear (only used if use_symlog=True).
+                       Set this roughly to the standard deviation (1-sigma) of your background noise.
+    """
+    base_fontsize = 30
+    config = {
+        "font.family": 'Times New Roman',
+        "font.size": base_fontsize,
+        "mathtext.fontset": 'stix',
+    }
+    rcParams.update(config)
+
+    plot_extent = [x_axis.min(), x_axis.max(), y_axis.max(), y_axis.min()]
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    # Apply appropriate normalization based on whether data contains negative values
+    if use_symlog:
+        # SymLogNorm handles positive and negative values, linear near zero
+        norm = SymLogNorm(linthresh=linthresh, base=10, vmin=np.ma.min(data), vmax=np.ma.max(data))
+        cbar_label = r'$\mathrm{SymLog}_{10}(\mathrm{Intensity})$'
+        cmap = 'seismic'
+    else:
+        # Standard LogNorm for strictly positive data (like Raw Visibility)
+        # Avoids manual np.log10() to keep colorbar ticks in original data scale
+        # Use a small vmin to avoid log(<=0) errors if standard data has minor artifacts
+        valid_min = np.ma.min(data[data > 0]) if np.any(data > 0) else 1e-5
+        norm = LogNorm(vmin=valid_min, vmax=np.ma.max(data))
+        cbar_label = r'$\log_{10}(\mathrm{Intensity})$'
+        cmap = 'viridis'
+
+    # Plot using the configured norm instead of manual np.log10()
+    im = ax.imshow(data, aspect='auto', extent=plot_extent, cmap=cmap, norm=norm)
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label(cbar_label)
+
+    ax.set_xticks([40, 50, 60, 70])
+    ax.set_yticks([0, 4, 8, 12, 16, 20])
+    ax.set_xlabel('Frequency (MHz)')
+    ax.set_ylabel('Time (Hours)')
+
+    if title is not None:
+        ax.set_title(title)
+
+    fig.tight_layout()
+
+    if save_figure and filename is not None:
+        fig.savefig(filename, bbox_inches='tight', dpi=300)
+
+    if show_figure:
+        plt.show()
+
+    plt.close(fig)
+
+
 def waterfall(polar='X'):
     save_figure = False
     show_figure = True
@@ -1112,6 +1396,7 @@ def waterfall(polar='X'):
 
     ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     freqs_mhz = ds['frequencies'] / 1e6
+    print(freqs_mhz[1] - freqs_mhz[0])
 
     times_2020 = np.linspace(0, 24, np.shape(raw_data)[1], endpoint=False)
 
@@ -1120,49 +1405,70 @@ def waterfall(polar='X'):
     end_idx = valid_indices[-1] + 1
     plot_freqs = freqs_mhz[start_idx:end_idx]
 
-    base_fontsize = 30
-    legend_fontsize = base_fontsize
-    text_fontsize = base_fontsize
-    config = {
-        "font.family": 'Times New Roman',  # 设置字体类型
-        "font.size": base_fontsize,
-        "mathtext.fontset": 'stix',
-    }
-    rcParams.update(config)
-
-    plot_extent = [plot_freqs.min(), plot_freqs.max(), times_2020.max(), times_2020.min()]
+    # base_fontsize = 30
+    # legend_fontsize = base_fontsize
+    # text_fontsize = base_fontsize
+    # config = {
+    #     "font.family": 'Times New Roman',  # 设置字体类型
+    #     "font.size": base_fontsize,
+    #     "mathtext.fontset": 'stix',
+    # }
+    # rcParams.update(config)
+    #
+    # plot_extent = [plot_freqs.min(), plot_freqs.max(), times_2020.max(), times_2020.min()]
 
     # antenna_idx = 16
-    for antenna_idx in tqdm(range(5)):
-        plot_data = raw_data[antenna_idx, :, start_idx:end_idx]
+    for antenna_idx in range(1):
+        plot_raw_data = raw_data[antenna_idx, :, start_idx:end_idx]
+        print('The shape of plot_raw_data:', plot_raw_data.shape)
 
-        fig, ax = plt.subplots(figsize=(14, 8))
-        im = ax.imshow(np.log10(plot_data), aspect='auto', extent=plot_extent, cmap='viridis')
-        cbar = fig.colorbar(im, ax=ax)
-        cbar.set_label(r'$\log_{10}(\mathrm{Intensity})$')
-        ax.set_xticks([40, 50, 60, 70])
-        ax.set_yticks([0, 4, 8, 12, 16, 20])
-        ax.set_xlabel('Frequency (MHz)')
-        ax.set_ylabel('Time (Hours)')
-        ax.set_title(f'Raw Data - Antenna {antenna_idx}, X Pol')
-        fig.tight_layout()
-        if save_figure:
-            fig.savefig(
-                f'../results/waterfalls/waterfall_antenna{"%02d" % antenna_idx}x.png', bbox_inches='tight', dpi=300
-            )
-        if show_figure:
-            plt.show()
-        plt.close(fig)
+        mask_out_of_data = _mask_out_of_band(raw_data[antenna_idx, :, :], freqs_mhz)
+        time_axis_clean_data, time_axis_background = _remove_rfi_time_axis(
+            mask_out_of_data, time_window_bins=5, threshold_sigma=80.0
+        )
+        all_axis_clean_data, all_axis_interp_spectrum, all_axis_background = _remove_rfi_freq_axis(
+            mask_out_of_data, freq_window_bins=5, threshold_sigma=30.0
+        )
 
-        fig, ax = plt.subplots(figsize=(14, 8))
-        ax.plot(times_2020, plot_data[:, (np.abs(plot_freqs - 45.)).argmin()])
-        ax.set_xlim([times_2020[0], times_2020[-1]])
-        ax.set_xticks([0, 4, 8, 12, 16, 20])
-        plt.show()
-        plt.close(fig)
+        plot_time_axis_background = time_axis_background[:, start_idx:end_idx]
+        plot_time_axis_clean = time_axis_clean_data[:, start_idx:end_idx]
+        plot_all_axis_interp_spec = all_axis_interp_spectrum[:, start_idx:end_idx]
+        plot_all_axis_background = all_axis_background[:, start_idx:end_idx]
+        plot_all_axis_clean = all_axis_clean_data[:, start_idx:end_idx]
+
+        # plot_data = all_axis_clean_data[:, start_idx:end_idx]
+
+        print('The shape of plot_all_axis_clean:', plot_all_axis_clean.shape)
+
+        _plot_waterfall(
+            plot_raw_data, plot_freqs, times_2020, show_figure=True,
+            title=f'Raw Data - Antenna {antenna_idx}, X Pol'
+        )
+
+        # _plot_waterfall(
+        #     plot_time_axis_background, plot_freqs, times_2020, show_figure=True,
+        #     title=f'Background along Time Axis - Antenna {antenna_idx}, X Pol'
+        # )
+
+        _plot_waterfall(
+            plot_time_axis_clean, plot_freqs, times_2020, show_figure=True,
+            title=f'Cleaned Data along Time Axis - Antenna {antenna_idx}, X Pol'
+        )
+
+        # _plot_waterfall(
+        #     plot_all_axis_interp_spec, plot_freqs, times_2020, show_figure=True, use_symlog=True,
+        #     title=f'Interpolated Spectrum - Antenna {antenna_idx}, X Pol'
+        # )
         #
-        # plt.plot(plot_freqs, plot_data[60, :])
-        # plt.show()
+        # _plot_waterfall(
+        #     plot_all_axis_background, plot_freqs, times_2020, show_figure=True, use_symlog=True,
+        #     title=f'Background - Antenna {antenna_idx}, X Pol'
+        # )
+
+        _plot_waterfall(
+            plot_all_axis_clean, plot_freqs, times_2020, show_figure=True,
+            title=f'Final Cleaned Data - Antenna {antenna_idx}, X Pol'
+        )
 
 
 if __name__ == '__main__':
