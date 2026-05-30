@@ -14,6 +14,10 @@ from astropy.time import Time
 from astropy.coordinates import EarthLocation
 
 from nec2array import (ArrayModel, VoltageSource, FreqSteps, Wire, impedanceRLC, ExecutionBlock, RadPatternSpec)
+from rfi_utils import (
+    mask_out_of_band, remove_rfi_time_axis, plot_waterfall, plot_spectra, plot_time_series,
+    flag_bad_channels_mad_of_mads
+)
 
 np.set_printoptions(precision=4, linewidth=80)
 
@@ -254,63 +258,165 @@ def imp_ants():
 
 def comp_power():
     save_figure = False
+    freqs_cut = (30.0, 80.0)
 
     edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
     inner_elems = [i for i in range(96) if i not in edge_elems]
+    i_ant18 = np.where(np.array(inner_elems) == 18)[0][0]
 
-    num_grids = 144
     # frq = 44.92
-    frq = 58.2
-    # frq = 59.3
+    # frq = 58.2
+    # frq = 55
+    # ref_frq = frq
     ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     freqs_mhz = ds['frequencies'] / 1e6
-    f_index = np.argmin(np.abs(freqs_mhz - frq))
-    frq = freqs_mhz[f_index]
+    index = 52
+    index_type = 'frq'  # 'ch' or 'frq'
+    if index_type == 'ch':
+        f_index = index
+        frq = freqs_mhz[f_index]
+    elif index_type == 'frq':
+        f_index = np.argmin(np.abs(freqs_mhz - index))
+        frq = index
+    else:
+        raise ValueError(f'Invalid index type: {index_type}')
+    ref_frq = frq
+    print(frq)
     # f_index = 230  # f = 44.92 MHz
     polar = 'X'
     base_time_2020 = '2020-12-02 11:58:39.000'
 
-    data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
+    # # ----------------------------------------------------------------------- #
+    # freqs_cut = (30.0, 80.0)
+    # polar = 'X'
+    #
+    # raw_data = np.load(RAW_DIR + 'SE607_20201202_115839_spw3_int600_dur86147_sst.npy')
+    # if polar == 'X':
+    #     raw_data = raw_data[0::2, :, :]
+    # elif polar == 'Y':
+    #     raw_data = raw_data[1::2, :, :]
+    # else:
+    #     raise ValueError('Invalid param: "polar" must be "X" or "Y".')
+    #
+    # ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+    # freqs_mhz = ds['frequencies'] / 1e6
+    #
+    # times_2020 = np.linspace(0, 24, np.shape(raw_data)[1], endpoint=False)
+    #
+    # valid_indices = np.where((freqs_mhz >= freqs_cut[0]) & (freqs_mhz <= freqs_cut[1]))[0]
+    # start_idx = valid_indices[0]  # Included
+    # end_idx = valid_indices[-1] + 1  # Excluded
+    # # plot_freqs = freqs_mhz[start_idx:end_idx]
+    # print(raw_data.shape)
+    #
+    # clean_data_channel = np.zeros((raw_data.shape[0], raw_data.shape[1]))
+    # clean_data_channel = np.ma.array(clean_data_channel, mask=True)
+    # for antenna_idx in tqdm(range(raw_data.shape[0])):
+    #     raw_data_ant = raw_data[antenna_idx, :, :]
+    #
+    #     mask_out_of_data = mask_out_of_band(raw_data_ant, start_idx, end_idx)
+    #     time_axis_clean_data, time_axis_background, time_axis_residual = remove_rfi_time_axis(
+    #         mask_out_of_data, time_window_bins=5, threshold_sigma=2.0
+    #     )
+    #
+    #     clean_data_channel[antenna_idx, :] = time_axis_clean_data[:, f_index]
+    # # data_interp_2020 = clean_data_channel
+    #
+    # times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * 3600 * units.second
+    #
+    # location = EarthLocation(lon=11.917778 * units.deg, lat=57.393056 * units.deg)
+    # times_2020.location = location
+    #
+    # lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
+    # loc_start = np.where(lst_2020 == np.min(lst_2020))[0][0]
+    #
+    # lst_grid = np.zeros_like(lst_2020)
+    # lst_grid[:len(lst_2020)-loc_start] = lst_2020[loc_start:]
+    # lst_grid[len(lst_2020)-loc_start:] = lst_2020[:loc_start]
+    #
+    # data_interp_2020 = np.ma.zeros_like(clean_data_channel)
+    # data_interp_2020[:, :len(lst_2020) - loc_start] = clean_data_channel[:, loc_start:]
+    # data_interp_2020[:, len(lst_2020) - loc_start:] = clean_data_channel[:, :loc_start]
+    #
+    # data_interp_2020.mask[36, :] = True
+    #
+    # print(f'Any masked elements? {data_interp_2020.mask.any()}')
+    # print(f'Mask ratio for edge elements: {np.sum(data_interp_2020.mask[edge_elems, :]) / np.size(data_interp_2020[edge_elems, :])}')
+    # print(f'Mask ratio for inner elements: {np.sum(data_interp_2020.mask[inner_elems, :]) / np.size(data_interp_2020[inner_elems, :])}')
+    # # ----------------------------------------------------------------------- #
+
+    raw_data = np.load(RAW_DIR + 'SE607_20201202_115839_spw3_int600_dur86147_sst.npy')
+    print(f'The shape of the raw data is {raw_data.shape}.')
+    if polar == 'X':
+        raw_data = raw_data[0::2, :, :]
+    elif polar == 'Y':
+        raw_data = raw_data[1::2, :, :]
+    else:
+        raise ValueError('Invalid param: "polar" must be "X" or "Y".')
+    valid_indices = np.where((freqs_mhz >= freqs_cut[0]) & (freqs_mhz <= freqs_cut[1]))[0]
+    start_idx = valid_indices[0]  # Included
+    end_idx = valid_indices[-1] + 1  # Excluded
+    clean_data = np.ma.masked_all(np.shape(raw_data), dtype=np.float64)
+    for antenna_idx in range(96):
+        raw_data_ant = raw_data[antenna_idx, :, :]
+
+        mask_out_of_data = mask_out_of_band(raw_data_ant, start_idx, end_idx)
+        # bad_channels_cleaned_data, full_mad_array, full_smooth_base = flag_bad_channels_mad_of_mads(
+        #     mask_out_of_data, start_idx, end_idx, freq_window_bins=15, threshold_sigma_freq=5.0
+        # )
+        time_axis_clean_data, time_axis_background, time_axis_residual = remove_rfi_time_axis(
+            mask_out_of_data, time_window_bins=7, threshold_sigma=2.0
+        )
+        clean_data[antenna_idx, :, :] = time_axis_clean_data
+
+    data_2020 = clean_data[:, :, f_index]
+    times_2020 = np.linspace(0, 24 * 3600, np.shape(data_2020)[1], endpoint=False)
+
+    # data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, 'X')
     times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * units.second
 
     location = EarthLocation(lon=11.917778 * units.deg, lat=57.393056 * units.deg)
     times_2020.location = location
 
     lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
-    if num_grids == len(lst_2020):
-        loc_start = np.where(lst_2020 == np.min(lst_2020))[0][0]
-        lst_grid = np.zeros_like(lst_2020)
-        lst_grid[:len(lst_2020)-loc_start] = lst_2020[loc_start:]
-        lst_grid[len(lst_2020)-loc_start:] = lst_2020[:loc_start]
-    else:
-        lst_grid = np.linspace(0, 24, num_grids)
-    interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
-    data_interp_2020 = interp_2020(lst_grid)
+    loc_start = np.where(lst_2020 == np.min(lst_2020))[0][0]
 
-    ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
+    lst_grid = np.zeros_like(lst_2020)
+    lst_grid[:len(lst_2020)-loc_start] = lst_2020[loc_start:]
+    lst_grid[len(lst_2020)-loc_start:] = lst_2020[:loc_start]
+
+    data_interp_2020 = np.zeros_like(data_2020)
+    data_interp_2020[:, :len(lst_2020) - loc_start] = data_2020[:, loc_start:]
+    data_interp_2020[:, len(lst_2020) - loc_start:] = data_2020[:, :loc_start]
+
+    # data_interp_2020 = np.ma.masked_array(data_interp_2020, mask=False)
+    print(data_interp_2020.shape)
+    # ----------------------------------------------------------------------- #
+
+    ks_2020 = np.ma.mean(data_interp_2020) / np.ma.mean(data_interp_2020, axis=1)
     data_interp_norm_2020 = data_interp_2020 * ks_2020[:, None]
     # data_interp_2020_edge = data_interp_2020[edge_elems, :]
     # data_interp_2020_inner = data_interp_2020[inner_elems, :]
     data_interp_norm_2020_edge = data_interp_norm_2020[edge_elems, :]
     data_interp_norm_2020_inner = data_interp_norm_2020[inner_elems, :]
 
-    with np.load(f'{DATA_PATH_PAPER}power_simulation_{f_index}.npz', allow_pickle=True) as power_sim:
-        if num_grids == len(lst_2020):
-            # times = lst_grid * 3600
-            times = power_sim['times']
-        else:
-            times = power_sim['times']
-        times = np.linspace(0, 24 * 3600, len(times), endpoint=False)
-        ants_temps_uni_iso = power_sim['ants_temps_uni_iso']
-        ants96_temps_norm = power_sim['ants96_temps_norm']
-        ants96_temps_uni = power_sim['ants96_temps_uni']
-        ants_temps_norm_single = power_sim['ants_temps_norm_single']
-        ants_temps_uni_single = power_sim['ants_temps_uni_single']
-    ants96_temps_uni_edge = ants96_temps_uni[:, edge_elems]
-    ants96_temps_uni_inner = ants96_temps_uni[:, inner_elems]
-    ants_temps_uni_single_edge = ants_temps_uni_single[:, edge_elems]
-    ants_temps_uni_single_inner = ants_temps_uni_single[:, inner_elems]
-    print(np.shape(np.var(ants96_temps_norm, axis=1)), np.shape(ants96_temps_norm))
+    # with np.load(f'{DATA_PATH_PAPER}power_simulation_{f_index}.npz', allow_pickle=True) as power_sim:
+    #     if num_grids == len(lst_2020):
+    #         # times = lst_grid * 3600
+    #         times = power_sim['times']
+    #     else:
+    #         times = power_sim['times']
+    #     times = np.linspace(0, 24 * 3600, len(times), endpoint=False)
+    #     ants_temps_uni_iso = power_sim['ants_temps_uni_iso']
+    #     ants96_temps_norm = power_sim['ants96_temps_norm']
+    #     ants96_temps_uni = power_sim['ants96_temps_uni']
+    #     ants_temps_norm_single = power_sim['ants_temps_norm_single']
+    #     ants_temps_uni_single = power_sim['ants_temps_uni_single']
+    # ants96_temps_uni_edge = ants96_temps_uni[:, edge_elems]
+    # ants96_temps_uni_inner = ants96_temps_uni[:, inner_elems]
+    # ants_temps_uni_single_edge = ants_temps_uni_single[:, edge_elems]
+    # ants_temps_uni_single_inner = ants_temps_uni_single[:, inner_elems]
+    # print(np.shape(np.var(ants96_temps_norm, axis=1)), np.shape(ants96_temps_norm))
 
     base_fontsize = 30
     legend_fontsize = base_fontsize
@@ -322,39 +428,48 @@ def comp_power():
     }
     rcParams.update(config)
 
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(lst_grid, data_interp_2020.T)
-    # std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
-    cv = np.std(data_interp_2020, axis=0, ddof=1) / np.mean(data_interp_2020, axis=0)
-    rms_cv = np.sqrt(np.mean(cv ** 2))
-    ax.text(0.25, 0.92,
-            f"RMS FD = {rms_cv * 100:.3g}%",
-            transform=ax.transAxes,
-            fontsize=text_fontsize,
-            color='blue',
-            bbox=dict(facecolor='white', alpha=0.0))
-    ax.set_xlim(0, 24)
-    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
-    ax.set_xlabel('Time over 24h')
-    ax.set_ylabel('Auto-correlated power')
-    ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
-    plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
-    if save_figure:
-        plt.savefig(f'../results/24hautocorr.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'../results/24hautocorr.png', dpi=300, facecolor='w')
-    plt.show()
+    # fig, ax = plt.subplots(figsize=(12, 8))
+    # ax.plot(lst_grid, data_interp_2020.T)
+    # # std = np.sqrt(np.mean(np.var(data_interp_2020, axis=0) / np.mean(data_interp_2020) ** 2))
+    # cv = np.ma.std(data_interp_2020, axis=0, ddof=1) / np.ma.mean(data_interp_2020, axis=0)
+    # rms_cv = np.ma.sqrt(np.ma.mean(cv ** 2))
+    # ax.text(0.25, 0.92,
+    #         f"RMS FD = {rms_cv * 100:.3g}%",
+    #         transform=ax.transAxes,
+    #         fontsize=text_fontsize,
+    #         color='blue',
+    #         bbox=dict(facecolor='white', alpha=0.0))
+    # ax.set_xlim(0, 24)
+    # ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    # ax.set_xlabel('Time over 24h')
+    # ax.set_ylabel('Auto-correlated power')
+    # ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
+    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    # if save_figure:
+    #     plt.savefig(f'../results/24hautocorr_{ref_frq}.pdf', dpi=300, facecolor='w')
+    #     plt.savefig(f'../results/24hautocorr_{ref_frq}.png', dpi=300, facecolor='w')
+    # plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(lst_grid, data_interp_norm_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
-    ax.plot(lst_grid, data_interp_norm_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
+    # ax.plot(lst_grid[90:100], data_interp_norm_2020_inner[0, 90:100].T, color="#0072B2", linestyle="--", label='inner elements')
+    # ax.plot(lst_grid[90:100], data_interp_norm_2020_inner[1:, 90:100].T, color="#0072B2", linestyle="--")
+    # ax.plot(lst_grid[90:100], data_interp_norm_2020_edge[0, 90:100].T, color="#E69F00", linestyle="-", label='edge elements')
+    # ax.plot(lst_grid[90:100], data_interp_norm_2020_edge[1:, 90:100].T, color="#E69F00", linestyle="-")
     ax.plot(lst_grid, data_interp_norm_2020_inner[0, :].T, color="#0072B2", linestyle="--", label='inner elements')
     ax.plot(lst_grid, data_interp_norm_2020_inner[1:, :].T, color="#0072B2", linestyle="--")
+    ax.plot(lst_grid, data_interp_norm_2020_edge[0, :].T, color="#E69F00", linestyle="-", label='edge elements')
+    ax.plot(lst_grid, data_interp_norm_2020_edge[1:, :].T, color="#E69F00", linestyle="-")
+    ax.axvline(x=lst_grid[80])
+    ax.axvline(x=lst_grid[100])
+    print(np.ma.max(data_interp_norm_2020_inner), np.ma.max(data_interp_norm_2020_edge))
+    print(np.where(data_interp_norm_2020_inner == np.ma.max(data_interp_norm_2020_inner)), np.where(data_interp_norm_2020_edge == np.ma.max(data_interp_norm_2020_edge)))
+    print(data_interp_norm_2020_inner[:, 96:99])
     # std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    cv_inner = np.std(data_interp_norm_2020_inner, axis=0, ddof=1) / np.mean(data_interp_norm_2020, axis=0)
-    rms_cv_inner = np.sqrt(np.mean(cv_inner ** 2))
+    cv_inner = np.ma.std(data_interp_norm_2020_inner, axis=0, ddof=1) / np.ma.mean(data_interp_norm_2020, axis=0)
+    rms_cv_inner = np.ma.sqrt(np.ma.mean(cv_inner ** 2))
     # std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-    cv_edge = np.std(data_interp_norm_2020_edge, axis=0, ddof=1) / np.mean(data_interp_norm_2020, axis=0)
-    rms_cv_edge = np.sqrt(np.mean(cv_edge ** 2))
+    cv_edge = np.ma.std(data_interp_norm_2020_edge, axis=0, ddof=1) / np.ma.mean(data_interp_norm_2020, axis=0)
+    rms_cv_edge = np.ma.sqrt(np.ma.mean(cv_edge ** 2))
     ax.text(0.20, 0.92,
             f"RMS FD Inner = {rms_cv_inner * 100:.3g}%",
             transform=ax.transAxes,
@@ -367,17 +482,19 @@ def comp_power():
             fontsize=text_fontsize,
             color='blue',
             bbox=dict(facecolor='white', alpha=0.0))
-    ax.set_xlim(0, 24)
-    ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    # # ax.set_xlim(0, 24)
+    # ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
     ax.set_xlabel('Time over 24h')
     ax.set_ylabel('Auto-correlated power')
-    ax.set_title(r'Case Obs, Normalized', fontsize=base_fontsize)
-    ax.legend(loc="lower right", fontsize=legend_fontsize, framealpha=0, bbox_to_anchor=(1.02, 0))
+    ax.set_title(f'Case Obs, Normalized, {ref_frq} MHz', fontsize=base_fontsize)
+    ax.legend(loc="lower right", fontsize=legend_fontsize - 6, framealpha=0, bbox_to_anchor=(1.02, 0))
     plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     if save_figure:
-        plt.savefig(f'../results/24hautocorr_norm_check_edge.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'../results/24hautocorr_norm_check_edge.png', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr_norm_check_edge_{ref_frq}.pdf', dpi=300, facecolor='w')
+        plt.savefig(f'../results/24hautocorr_norm_check_edge_{ref_frq}.png', dpi=300, facecolor='w')
     plt.show()
+
+    return
 
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.plot(times / 3600, ants96_temps_norm)
@@ -741,16 +858,19 @@ def comp_power():
 
 def resi_spectrum():
     save_figure = False
+    polar = 'X'
+    freqs_cut = (30.0, 80.0)
 
+    times_2020 = np.linspace(0, 24 * 3600, 144, endpoint=False)
     ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     # freq_channel = np.argmin(np.abs(freqs_MHz - 44.92))
     # # files = ds.files()  # heads
     # print(freq_channel)
     freqs_mhz = ds['frequencies'] / 1e6
-    ch_low = np.argmin(np.abs(freqs_mhz - 30))
-    ch_high = np.argmin(np.abs(freqs_mhz - 80))
+    ch_low = np.argmin(np.abs(freqs_mhz - freqs_cut[0]))
+    ch_high = np.argmin(np.abs(freqs_mhz - freqs_cut[1]))
     print(ch_low, ch_high, np.argmin(np.abs(freqs_mhz - 45)), np.argmin(np.abs(freqs_mhz - 44.92)))
-    freqs_mhz = freqs_mhz[ch_low:ch_high]
+    # freqs_mhz = freqs_mhz[ch_low:ch_high]
 
     edge_elems = [7, 86, 59, 31, 53, 22, 23, 91, 52, 68, 69, 9, 10, 11, 56, 42, 43, 89, 35, 34, 54, 75, 50]
     print(len(edge_elems))
@@ -761,54 +881,134 @@ def resi_spectrum():
     # print(len(edge_elems))
     inner_elems = [i for i in range(96) if i not in edge_elems]
 
-    std_inner_spectrum = []
-    std_edge_spectrum = []
-    vis_mean_spectrum = []
-    std_inner_spectrum2 = []
-    std_edge_spectrum2 = []
-    for f_index in tqdm(range(ch_low, ch_high, 1)):
+    # (ants * timestamps * channels)
+    raw_data = np.load(RAW_DIR + 'SE607_20201202_115839_spw3_int600_dur86147_sst.npy')
+    print(f'The shape of the raw data is {raw_data.shape}.')
+    if polar == 'X':
+        raw_data = raw_data[0::2, :, :]
+    elif polar == 'Y':
+        raw_data = raw_data[1::2, :, :]
+    else:
+        raise ValueError('Invalid param: "polar" must be "X" or "Y".')
+    valid_indices = np.where((freqs_mhz >= freqs_cut[0]) & (freqs_mhz <= freqs_cut[1]))[0]
+    start_idx = valid_indices[0]  # Included
+    end_idx = valid_indices[-1] + 1  # Excluded
+    clean_data = np.ma.masked_all(np.shape(raw_data), dtype=np.float64)
+    for antenna_idx in range(96):
+        raw_data_ant = raw_data[antenna_idx, :, :]
 
-        num_grids = 144
-        polar = 'X'
+        mask_out_of_data = mask_out_of_band(raw_data_ant, start_idx, end_idx)
+        # bad_channels_cleaned_data, full_mad_array, full_smooth_base = flag_bad_channels_mad_of_mads(
+        #     mask_out_of_data, start_idx, end_idx, freq_window_bins=15, threshold_sigma_freq=5.0
+        # )
+        time_axis_clean_data, time_axis_background, time_axis_residual = remove_rfi_time_axis(
+            mask_out_of_data, time_window_bins=7, threshold_sigma=1.2
+        )
+        clean_data[antenna_idx, :, :] = time_axis_clean_data
+
+    # diff_times = (clean_data[:, 1:, :] - clean_data[:, :-1, :]) / clean_data[:, :-1, :]
+    # std_diff_times = np.std(diff_times, axis=1)
+    # plot_spectra(
+    #     freqs_mhz[start_idx:end_idx], std_diff_times[:, start_idx:end_idx], show_figure=True, filename=None,
+    #     title=None, alpha=0.3
+    # )
+
+    antenna_show = 0
+
+    plot_waterfall(clean_data[antenna_show, :, start_idx:end_idx], freqs_mhz[start_idx:end_idx],
+                   times_2020 / 3600, show_figure=True)
+    # plot_spectra(
+    #     freqs_mhz[start_idx:end_idx], clean_data[antenna_show, ::10, start_idx:end_idx], show_figure=True, filename=None,
+    #     title=None, alpha=0.3
+    # )
+    # diffs_frq = (raw_data[:, ::10, 1:] - raw_data[:, ::10, :-1]) / raw_data[:, ::10, :-1]
+    # plot_spectra(
+    #     freqs_mhz[start_idx:end_idx], diffs_frq[antenna_show, :, start_idx:end_idx], show_figure=True, filename=None,
+    #     title=None, alpha=0.3
+    # )
+    # plot_time_series(
+    #     times_2020, clean_data[antenna_show, :, start_idx:end_idx], show_figure=True,
+    #     filename=None
+    # )
+    # plot_time_series(
+    #     times_2020, clean_data[:, :, 376].T, show_figure=True,
+    #     filename=None
+    # )
+    # plot_time_series(
+    #     times_2020, clean_data[:, :, 377].T, show_figure=True,
+    #     filename=None
+    # )
+    # plot_time_series(
+    #     times_2020, clean_data[:, :, 378].T, show_figure=True,
+    #     filename=None
+    # )
+
+    # std_inner_spectrum = []
+    # std_edge_spectrum = []
+    # vis_mean_spectrum = []
+    raw_data_sorted = np.zeros((np.shape(raw_data)[0], np.shape(raw_data)[1], ch_high - ch_low))
+    std_inner_spectrum = np.ma.masked_all(ch_high - ch_low, dtype=np.float64)
+    std_edge_spectrum = np.ma.masked_all(ch_high - ch_low, dtype=np.float64)
+    vis_mean_spectrum = np.ma.masked_all(ch_high - ch_low, dtype=np.float64)
+    for f_index in tqdm(range(ch_low, ch_high)):
+
         base_time_2020 = '2020-12-02 11:58:39.000'
 
-        data_2020, times_2020, origin_flags_2020 = _load_data(1, f_index, polar)
+        data_2020 = clean_data[:, :, f_index]
+        # data_2020 = raw_data[:, :, f_index]
+        times_2020 = np.linspace(0, 24 * 3600, np.shape(data_2020)[1], endpoint=False)
         times_2020 = Time(base_time_2020, format='iso', scale='utc') + times_2020 * units.second
 
         location = EarthLocation(lon=11.917778 * units.deg, lat=57.393056 * units.deg)
         times_2020.location = location
 
         lst_2020 = times_2020.sidereal_time('mean').hour  # Transform to sidereal time
-        if num_grids == len(lst_2020):
-            loc_start = np.where(lst_2020 == np.min(lst_2020))[0][0]
-            lst_grid = np.zeros_like(lst_2020)
-            lst_grid[:len(lst_2020) - loc_start] = lst_2020[loc_start:]
-            lst_grid[len(lst_2020) - loc_start:] = lst_2020[:loc_start]
-        else:
-            lst_grid = np.linspace(0, 24, num_grids)
-        interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
-        data_interp_2020 = interp_2020(lst_grid)
+        sort_idx = np.argsort(lst_2020)
+        lst_sorted_2020 = lst_2020[sort_idx]
+        data_interp_2020 = data_2020[:, sort_idx]
+        raw_data_sorted[:, :, f_index - ch_low] = raw_data[:, sort_idx, f_index]
+        # if num_grids == len(lst_2020):
+        #     loc_start = np.where(lst_2020 == np.min(lst_2020))[0][0]
+        #     lst_grid = np.zeros_like(lst_2020)
+        #     lst_grid[:len(lst_2020) - loc_start] = lst_2020[loc_start:]
+        #     lst_grid[len(lst_2020) - loc_start:] = lst_2020[:loc_start]
+        # else:
+        #     lst_grid = np.linspace(0, 24, num_grids)
+        # interp_2020 = interp1d(lst_2020, data_2020, kind='linear', fill_value="extrapolate")
+        # data_interp_2020 = interp_2020(lst_grid)
 
-        ks_2020 = np.mean(data_interp_2020) / np.mean(data_interp_2020, axis=1)
+        ks_2020 = np.ma.mean(data_interp_2020) / np.ma.mean(data_interp_2020, axis=1)
         data_interp_norm_2020 = data_interp_2020 * ks_2020[:, None]
         data_interp_norm_2020_edge = data_interp_norm_2020[edge_elems, :]
         data_interp_norm_2020_inner = data_interp_norm_2020[inner_elems, :]
 
+        data_interp_norm_2020 = data_interp_norm_2020[:, 80:100]
+        data_interp_norm_2020_edge = data_interp_norm_2020_edge[:, 80:100]
+        data_interp_norm_2020_inner = data_interp_norm_2020_inner[:, 80:100]
+
         # std_inner = np.sqrt(np.mean(np.var(data_interp_norm_2020_inner, axis=0) / np.mean(data_interp_norm_2020) ** 2))
         # std_edge = np.sqrt(np.mean(np.var(data_interp_norm_2020_edge, axis=0) / np.mean(data_interp_norm_2020) ** 2))
-        cv_inner = np.std(data_interp_norm_2020_inner, axis=0, ddof=1) / np.mean(data_interp_norm_2020, axis=0)
-        rms_cv_inner = np.sqrt(np.mean(cv_inner ** 2))  # rms cv: RMS coefficient of variation
-        cv_edge = np.std(data_interp_norm_2020_edge, axis=0, ddof=1) / np.mean(data_interp_norm_2020, axis=0)
-        rms_cv_edge = np.sqrt(np.mean(cv_edge ** 2))
-        std_inner_spectrum.append(rms_cv_inner)
-        std_edge_spectrum.append(rms_cv_edge)
-        vis_mean = np.mean(data_interp_norm_2020)
-        vis_mean_spectrum.append(vis_mean)
+        cv_inner = np.ma.std(data_interp_norm_2020_inner, axis=0, ddof=1) / np.ma.mean(data_interp_norm_2020, axis=0)
+        rms_cv_inner = np.ma.sqrt(np.ma.mean(cv_inner ** 2))  # rms cv: RMS coefficient of variation
+        cv_edge = np.ma.std(data_interp_norm_2020_edge, axis=0, ddof=1) / np.ma.mean(data_interp_norm_2020, axis=0)
+        rms_cv_edge = np.ma.sqrt(np.ma.mean(cv_edge ** 2))  # 某些时间处的cv很大
+        # std_inner_spectrum.append(rms_cv_inner)
+        std_inner_spectrum[f_index - ch_low] = rms_cv_inner
+        # std_edge_spectrum.append(rms_cv_edge)
+        std_edge_spectrum[f_index - ch_low] = rms_cv_edge
+        vis_mean = np.ma.mean(data_interp_norm_2020)
+        # vis_mean_spectrum.append(vis_mean)
+        vis_mean_spectrum[f_index - ch_low] = vis_mean
 
-    std_inner_spectrum = np.array(std_inner_spectrum)
-    std_edge_spectrum = np.array(std_edge_spectrum)
-    vis_mean_spectrum = np.array(vis_mean_spectrum)
-    print(std_inner_spectrum[230 - 155], std_edge_spectrum[230 - 155])
+    times = np.linspace(0, 24 * 3600, 144, endpoint=False)
+    plot_waterfall(raw_data_sorted[0, :, :], freqs_mhz[start_idx:end_idx],
+                   times / 3600, show_figure=True)
+    return
+
+    # std_inner_spectrum = np.array(std_inner_spectrum)
+    # std_edge_spectrum = np.array(std_edge_spectrum)
+    # vis_mean_spectrum = np.array(vis_mean_spectrum)
+    print(len(freqs_mhz), len(std_inner_spectrum), len(std_edge_spectrum))
 
     base_fontsize = 26
     legend_fontsize = base_fontsize
@@ -821,13 +1021,19 @@ def resi_spectrum():
     rcParams.update(config)
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(freqs_mhz, std_inner_spectrum * 100, label='Inner')
-    ax.plot(freqs_mhz, std_edge_spectrum * 100, label='Edge')
-    ax.axvline(x=45)
+    diff = std_inner_spectrum[1:] - std_inner_spectrum[:-1]
+    loc_peak = np.where(diff==np.ma.max(diff))[0][0] + ch_low + 1
+    print(loc_peak)
+    ax.plot(freqs_mhz[ch_low:ch_high], std_inner_spectrum * 100, label='Inner')
+    ax.plot(freqs_mhz[ch_low:ch_high], std_edge_spectrum * 100, label='Edge')
+    ax.axvline(x=freqs_mhz[loc_peak])
     ax.set_xlabel('Frequency [MHz]')
     ax.set_ylabel('RMS Fractional Dispersion [%]')
+    ax.set_xlim([freqs_mhz[ch_low], freqs_mhz[ch_high]])
+    ax.set_xticks([35, 40, 45, 50, 55, 60, 65, 70, 75])
     ax.set_ylim([0., 2.5])
     ax.set_title(r'Case Obs', fontsize=base_fontsize)
+    ax.grid(True, linestyle='--', alpha=0.7)
     # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
     ax.legend()
     if save_figure:
@@ -835,8 +1041,10 @@ def resi_spectrum():
         plt.savefig(f'../results/rms_fd_data.png', dpi=300, facecolor='w')
     plt.show()
 
+    return
+
     fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(freqs_mhz, (std_inner_spectrum - std_edge_spectrum) * 100, label='Inner')
+    ax.plot(freqs_mhz[ch_low:ch_high], (std_inner_spectrum - std_edge_spectrum) * 100, label='Inner')
     # ax.plot(freqs_mhz, std_edge_spectrum * 100, label='Edge')
     # ax.axvline(x=41)
     ax.axhline(0, color='k', linestyle='--')
@@ -852,7 +1060,7 @@ def resi_spectrum():
     plt.show()
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(freqs_mhz, vis_mean_spectrum)
+    ax.plot(freqs_mhz[ch_low:ch_high], vis_mean_spectrum)
     ax.set_xlabel('Frequency [MHz]')
     ax.set_ylabel('Mean Auto-correlated Power')
     # ax.set_ylim([-0.1, 3.1])
@@ -864,7 +1072,7 @@ def resi_spectrum():
         plt.savefig(f'../results/2.png', dpi=300, facecolor='w')
     plt.show()
 
-    freqs_mhz2 = freqs_mhz[::3]
+    freqs_mhz2 = freqs_mhz[ch_low:ch_high:3]
 
     ants96_std_inner_spectrum = []
     ants96_std_edge_spectrum = []
@@ -937,10 +1145,12 @@ def resi_spectrum():
     ax.plot(freqs_mhz2, ants96_std_edge_spectrum * 100, label='Edge')
     # ax.axvline(x=41)
     ax.set_xlabel('Frequency [MHz]')
+    ax.set_xlim([30, 80])
+    ax.set_xticks([35, 40, 45, 50, 55, 60, 65, 70, 75])
     ax.set_ylabel('RMS Fractional Dispersion [%]')  # RMS fractional dispersion
     ax.set_ylim([0., 2.5])
     ax.set_title(r'Case MC', fontsize=base_fontsize)
-    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    ax.grid(True, linestyle='--', alpha=0.7)
     ax.legend()
     if save_figure:
         plt.savefig(f'../results/rms_fd_simulation.pdf', dpi=300, facecolor='w')
@@ -963,33 +1173,33 @@ def resi_spectrum():
         plt.savefig(f'../results/31.png', dpi=300, facecolor='w')
     plt.show()
 
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(freqs_mhz2, ants_std_inner_spectrum * 100, label='Inner')
-    ax.plot(freqs_mhz2, ants_std_edge_spectrum * 100, label='Edge')
-    # ax.axvline(x=41)
-    ax.set_xlabel('Frequency [MHz]')
-    ax.set_ylabel('RMS Fractional Dispersion [%]')
-    # ax.set_ylim([-0.1, 3.1])
-    ax.set_title(r'Case NI', fontsize=base_fontsize)
-    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
-    ax.legend()
-    if save_figure:
-        plt.savefig(f'../results/4.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'../results/4.png', dpi=300, facecolor='w')
-    plt.show()
-
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax.plot(freqs_mhz2, data_mean_spectrum)
-    ax.set_xlabel('Frequency [MHz]')
-    ax.set_ylabel('Mean Antenna Temperature')
-    # ax.set_ylim([-0.1, 3.1])
-    # ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
-    # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
-    ax.legend()
-    if save_figure:
-        plt.savefig(f'../results/5.pdf', dpi=300, facecolor='w')
-        plt.savefig(f'../results/5.png', dpi=300, facecolor='w')
-    plt.show()
+    # fig, ax = plt.subplots(figsize=(12, 8))
+    # ax.plot(freqs_mhz2, ants_std_inner_spectrum * 100, label='Inner')
+    # ax.plot(freqs_mhz2, ants_std_edge_spectrum * 100, label='Edge')
+    # # ax.axvline(x=41)
+    # ax.set_xlabel('Frequency [MHz]')
+    # ax.set_ylabel('RMS Fractional Dispersion [%]')
+    # # ax.set_ylim([-0.1, 3.1])
+    # ax.set_title(r'Case NI', fontsize=base_fontsize)
+    # # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    # ax.legend()
+    # if save_figure:
+    #     plt.savefig(f'../results/4.pdf', dpi=300, facecolor='w')
+    #     plt.savefig(f'../results/4.png', dpi=300, facecolor='w')
+    # plt.show()
+    #
+    # fig, ax = plt.subplots(figsize=(12, 8))
+    # ax.plot(freqs_mhz2, data_mean_spectrum)
+    # ax.set_xlabel('Frequency [MHz]')
+    # ax.set_ylabel('Mean Antenna Temperature')
+    # # ax.set_ylim([-0.1, 3.1])
+    # # ax.set_title(r'Case Obs, Raw', fontsize=base_fontsize)
+    # # plt.subplots_adjust(left=0.14, right=0.98, top=0.93, bottom=0.12)
+    # ax.legend()
+    # if save_figure:
+    #     plt.savefig(f'../results/5.pdf', dpi=300, facecolor='w')
+    #     plt.savefig(f'../results/5.png', dpi=300, facecolor='w')
+    # plt.show()
 
 
 def two_lamhalfdip():
@@ -1097,294 +1307,22 @@ def func_tmp():
     ax.legend()
     plt.show()
 
+def waterfall():
+    polar = 'X'
+    ant = 0
+    freqs_cut = (30.0, 80.0)
 
-def _mask_out_of_band(raw_data, freqs_mhz, min_freq=30.0, max_freq=80.0):
-    """
-    Mask out data outside the specified frequency band.
+    timestamps = np.linspace(0, 24, 144, endpoint=False)
 
-    Parameters:
-    raw_data (numpy.ndarray): 2D array of raw visibility data (Time, Freq).
-    freqs_mhz (numpy.ndarray): 1D array of frequencies in MHz.
-    min_freq (float): Minimum frequency to keep.
-    max_freq (float): Maximum frequency to keep.
+    ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
+    freqs_mhz = ds['frequencies'] / 1e6
+    ch_low = np.argmin(np.abs(freqs_mhz - freqs_cut[0]))
+    ch_high = np.argmin(np.abs(freqs_mhz - freqs_cut[1]))
+    print(ch_low, ch_high)
 
-    Returns:
-    numpy.ma.MaskedArray: Data with out-of-band frequencies masked.
-    """
-    # Initialize a masked array with no mask initially
-    masked_data = np.ma.masked_array(raw_data, mask=False)
-
-    # Create boolean mask for out-of-band channels
-    out_of_band_mask = (freqs_mhz < min_freq) | (freqs_mhz > max_freq)
-
-    # Apply mask to all time bins for the out-of-band frequency channels
-    masked_data[:, out_of_band_mask] = np.ma.masked
-
-    return masked_data
-
-
-def _remove_rfi_time_axis(masked_data, time_window_bins=5, threshold_sigma=7.0):
-    """
-    Robust RFI removal using a sliding median filter and Median Absolute Deviation (MAD).
-    Processes data channel by channel to account for bandpass shape.
-
-Parameters:
-    -----------
-    masked_data : numpy.ma.MaskedArray
-        2D array of visibility data (Time x Frequency) with initial band masks applied.
-    time_window_bins : int, optional
-        Number of time bins used for the sliding median filter. Represents the temporal scale
-        of the background model. Default is 5.
-    threshold_sigma : float, optional
-        The clipping threshold based on equivalent Gaussian standard deviations (derived from MAD).
-        Default is 7.0.
-
-    Returns:
-    --------
-    numpy.ma.MaskedArray
-        The visibility data with newly generated masks for wideband burst RFI (e.g., lightning).
-    """
-    # Copy data to avoid modifying the original array
-    cleaned_data = masked_data.copy()
-    n_times, n_freqs = cleaned_data.shape
-
-    full_background = np.zeros_like(cleaned_data.data)
-
-    for f in range(n_freqs):
-        # Skip if the entire frequency channel is already masked (e.g., out of band)
-        if cleaned_data[:, f].mask.all():
-            continue
-
-        channel_data = cleaned_data[:, f].data
-
-        # 1. Background modeling: Sliding median filter along the time axis
-        # This isolates the slow-varying sky and instrument background
-        background = median_filter(channel_data, size=time_window_bins)
-
-        full_background[:, f] = background
-
-        # 2. Flattening: Subtract the background to get zero-mean residuals
-        residual = channel_data - background
-
-        # 3. Robust noise estimation: Calculate MAD
-        median_res = np.median(residual)
-        mad = np.median(np.abs(residual - median_res))
-
-        # Prevent zero-division or thresholding issues if channel is artificially flat
-        if mad == 0:
-            continue
-
-        # 4. Define threshold: Convert MAD to equivalent standard deviation
-        sigma_equiv = 1.4826 * mad
-        threshold = threshold_sigma * sigma_equiv
-
-        # 5. Flag RFI: Mark pixels exceeding the robust threshold
-        rfi_mask = np.abs(residual) > threshold
-        cleaned_data.mask[:, f] |= rfi_mask
-
-    return cleaned_data, full_background
-
-
-def _remove_rfi_freq_axis(masked_data, freq_window_bins=15, threshold_sigma=7.0):
-    """
-    Removes narrowband continuous RFI by flattening the bandpass and scanning the frequency axis.
-    Must be executed AFTER the time-axis broadband RFI mitigation to avoid cross-contamination.
-
-    Parameters:
-    -----------
-    masked_data : numpy.ma.MaskedArray
-        2D array of visibility data that has ALREADY been cleaned of wideband bursts
-        (i.e., the output from the time-axis mitigation step).
-    freq_window_bins : int, optional
-        Number of frequency channels used for the sliding median filter to account for
-        residual bandpass ripples. Default is 15.
-    threshold_sigma : float, optional
-        The clipping threshold based on equivalent Gaussian standard deviations. Default is 7.0.
-
-    Returns:
-    --------
-    numpy.ma.MaskedArray
-        The visibility data with additional masks covering narrowband continuous wave RFI.
-    """
-    cleaned_data = masked_data.copy()
-    n_times, n_freqs = cleaned_data.shape
-
-    full_interpolated_spectrum = np.zeros_like(cleaned_data.data)
-    full_local_background = np.zeros_like(cleaned_data.data)
-
-    # 1. Isolate the static instrument response and sky spectrum (The Fingerprint)
-    # Using np.ma.median ensures previously flagged broadband RFI does not bias the bandpass model
-    bandpass_model = np.ma.median(cleaned_data, axis=0)
-
-    for t in range(n_times):
-        if cleaned_data[t, :].mask.all():
-            continue
-
-        time_slice = cleaned_data[t, :].data
-        slice_mask = cleaned_data[t, :].mask
-
-        # 2. Flatten the frequency cliff to create a zero-mean baseline
-        flattened_spectrum = time_slice - bandpass_model.data
-
-        # 3. Temporarily patch the "pits" (flagged broadband RFI) before spatial filtering
-        # This prevents scipy.ndimage from leaking RFI energy into the local background model
-        valid_idx = ~slice_mask
-        if np.sum(valid_idx) < 2:
-            continue
-
-        freq_indices = np.arange(n_freqs)
-        interpolated_spectrum = np.interp(
-            freq_indices,
-            freq_indices[valid_idx],
-            flattened_spectrum[valid_idx]
-        )
-
-        full_interpolated_spectrum[t, :] = interpolated_spectrum
-
-        # 4. Extract local baseline to account for any residual bandpass ripples
-        local_background = median_filter(interpolated_spectrum, size=freq_window_bins, mode='reflect')
-        residual = interpolated_spectrum - local_background
-
-        full_local_background[t, :] = local_background
-
-        # 5. Robust noise estimation strictly on physically valid pixels
-        median_res = np.median(residual[valid_idx])
-        mad = np.median(np.abs(residual[valid_idx] - median_res))
-
-        if mad == 0:
-            continue
-
-        # 6. Isolate and flag narrowband spikes
-        sigma_equiv = 1.4826 * mad
-        threshold = threshold_sigma * sigma_equiv
-        rfi_mask = np.abs(residual) > threshold
-
-        cleaned_data.mask[t, :] |= rfi_mask
-
-    return cleaned_data, full_interpolated_spectrum, full_local_background
-
-
-# def _plot_waterfall(
-#         data, x_axis, y_axis, save_figure=None, show_figure=None, title=None, file_dir='../results/waterfalls/',
-#         filename=None
-# ):
-#     """
-#     Plots and optionally saves a waterfall visualization of the provided 2D array.
-#     """
-#     # Hardcoded font and plot configurations
-#     base_fontsize = 30
-#     config = {
-#         "font.family": 'Times New Roman',
-#         "font.size": base_fontsize,
-#         "mathtext.fontset": 'stix',
-#     }
-#     rcParams.update(config)
-#
-#     # Calculate image extent based on axis arrays
-#     plot_extent = [x_axis.min(), x_axis.max(), y_axis.max(), y_axis.min()]
-#
-#     fig, ax = plt.subplots(figsize=(14, 8))
-#
-#     # Plotting data in log10 scale
-#     im = ax.imshow(np.log10(data), aspect='auto', extent=plot_extent, cmap='viridis')
-#
-#     # Colorbar configuration
-#     cbar = fig.colorbar(im, ax=ax)
-#     cbar.set_label(r'$\log_{10}(\mathrm{Intensity})$')
-#
-#     # Hardcoded ticks and labels
-#     ax.set_xticks([40, 50, 60, 70])
-#     ax.set_yticks([0, 4, 8, 12, 16, 20])
-#     ax.set_xlabel('Frequency (MHz)')
-#     ax.set_ylabel('Time (Hours)')
-#
-#     # Optional Title
-#     if title is not None:
-#         ax.set_title(title)
-#
-#     fig.tight_layout()
-#
-#     # Optional Save
-#     if save_figure and filename is not None:
-#         fig.savefig(file_dir + filename, bbox_inches='tight', dpi=300)
-#
-#     # Optional Show
-#     if show_figure:
-#         plt.show()
-#
-#     # Free memory
-#     plt.close(fig)
-
-
-def _plot_waterfall(data, x_axis, y_axis, use_symlog=False, linthresh=10000000.0, save_figure=None, show_figure=None,
-                   title=None, file_dir='../results/waterfalls/', filename=None):
-    """
-    Plots and optionally saves a waterfall visualization.
-    Supports standard Log10 scale (for raw data) and SymLog scale (for residual/flattened data containing negative values).
-
-    Parameters:
-    data, x_axis, y_axis: Required data arrays.
-    use_symlog (bool): If True, uses SymLogNorm. If False, uses standard LogNorm.
-    linthresh (float): The range within which the plot is linear (only used if use_symlog=True).
-                       Set this roughly to the standard deviation (1-sigma) of your background noise.
-    """
-    base_fontsize = 30
-    config = {
-        "font.family": 'Times New Roman',
-        "font.size": base_fontsize,
-        "mathtext.fontset": 'stix',
-    }
-    rcParams.update(config)
-
-    plot_extent = [x_axis.min(), x_axis.max(), y_axis.max(), y_axis.min()]
-
-    fig, ax = plt.subplots(figsize=(14, 8))
-
-    # Apply appropriate normalization based on whether data contains negative values
-    if use_symlog:
-        # SymLogNorm handles positive and negative values, linear near zero
-        norm = SymLogNorm(linthresh=linthresh, base=10, vmin=np.ma.min(data), vmax=np.ma.max(data))
-        cbar_label = r'$\mathrm{SymLog}_{10}(\mathrm{Intensity})$'
-        cmap = 'seismic'
-    else:
-        # Standard LogNorm for strictly positive data (like Raw Visibility)
-        # Avoids manual np.log10() to keep colorbar ticks in original data scale
-        # Use a small vmin to avoid log(<=0) errors if standard data has minor artifacts
-        valid_min = np.ma.min(data[data > 0]) if np.any(data > 0) else 1e-5
-        norm = LogNorm(vmin=valid_min, vmax=np.ma.max(data))
-        cbar_label = r'$\log_{10}(\mathrm{Intensity})$'
-        cmap = 'viridis'
-
-    # Plot using the configured norm instead of manual np.log10()
-    im = ax.imshow(data, aspect='auto', extent=plot_extent, cmap=cmap, norm=norm)
-
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label(cbar_label)
-
-    ax.set_xticks([40, 50, 60, 70])
-    ax.set_yticks([0, 4, 8, 12, 16, 20])
-    ax.set_xlabel('Frequency (MHz)')
-    ax.set_ylabel('Time (Hours)')
-
-    if title is not None:
-        ax.set_title(title)
-
-    fig.tight_layout()
-
-    if save_figure and filename is not None:
-        fig.savefig(filename, bbox_inches='tight', dpi=300)
-
-    if show_figure:
-        plt.show()
-
-    plt.close(fig)
-
-
-def waterfall(polar='X'):
-    save_figure = False
-    show_figure = True
-
+    # (ants * 2, timestamps, channels)
     raw_data = np.load(RAW_DIR + 'SE607_20201202_115839_spw3_int600_dur86147_sst.npy')
+    print(f'The shape of the raw data is {raw_data.shape}.')
     if polar == 'X':
         raw_data = raw_data[0::2, :, :]
     elif polar == 'Y':
@@ -1392,83 +1330,7 @@ def waterfall(polar='X'):
     else:
         raise ValueError('Invalid param: "polar" must be "X" or "Y".')
 
-    print('The shape of raw_data:', raw_data.shape)
-
-    ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
-    freqs_mhz = ds['frequencies'] / 1e6
-    print(freqs_mhz[1] - freqs_mhz[0])
-
-    times_2020 = np.linspace(0, 24, np.shape(raw_data)[1], endpoint=False)
-
-    valid_indices = np.where((freqs_mhz >= 30.0) & (freqs_mhz <= 80.0))[0]
-    start_idx = valid_indices[0]
-    end_idx = valid_indices[-1] + 1
-    plot_freqs = freqs_mhz[start_idx:end_idx]
-
-    # base_fontsize = 30
-    # legend_fontsize = base_fontsize
-    # text_fontsize = base_fontsize
-    # config = {
-    #     "font.family": 'Times New Roman',  # 设置字体类型
-    #     "font.size": base_fontsize,
-    #     "mathtext.fontset": 'stix',
-    # }
-    # rcParams.update(config)
-    #
-    # plot_extent = [plot_freqs.min(), plot_freqs.max(), times_2020.max(), times_2020.min()]
-
-    # antenna_idx = 16
-    for antenna_idx in range(1):
-        plot_raw_data = raw_data[antenna_idx, :, start_idx:end_idx]
-        print('The shape of plot_raw_data:', plot_raw_data.shape)
-
-        mask_out_of_data = _mask_out_of_band(raw_data[antenna_idx, :, :], freqs_mhz)
-        time_axis_clean_data, time_axis_background = _remove_rfi_time_axis(
-            mask_out_of_data, time_window_bins=5, threshold_sigma=80.0
-        )
-        all_axis_clean_data, all_axis_interp_spectrum, all_axis_background = _remove_rfi_freq_axis(
-            mask_out_of_data, freq_window_bins=5, threshold_sigma=30.0
-        )
-
-        plot_time_axis_background = time_axis_background[:, start_idx:end_idx]
-        plot_time_axis_clean = time_axis_clean_data[:, start_idx:end_idx]
-        plot_all_axis_interp_spec = all_axis_interp_spectrum[:, start_idx:end_idx]
-        plot_all_axis_background = all_axis_background[:, start_idx:end_idx]
-        plot_all_axis_clean = all_axis_clean_data[:, start_idx:end_idx]
-
-        # plot_data = all_axis_clean_data[:, start_idx:end_idx]
-
-        print('The shape of plot_all_axis_clean:', plot_all_axis_clean.shape)
-
-        _plot_waterfall(
-            plot_raw_data, plot_freqs, times_2020, show_figure=True,
-            title=f'Raw Data - Antenna {antenna_idx}, X Pol'
-        )
-
-        # _plot_waterfall(
-        #     plot_time_axis_background, plot_freqs, times_2020, show_figure=True,
-        #     title=f'Background along Time Axis - Antenna {antenna_idx}, X Pol'
-        # )
-
-        _plot_waterfall(
-            plot_time_axis_clean, plot_freqs, times_2020, show_figure=True,
-            title=f'Cleaned Data along Time Axis - Antenna {antenna_idx}, X Pol'
-        )
-
-        # _plot_waterfall(
-        #     plot_all_axis_interp_spec, plot_freqs, times_2020, show_figure=True, use_symlog=True,
-        #     title=f'Interpolated Spectrum - Antenna {antenna_idx}, X Pol'
-        # )
-        #
-        # _plot_waterfall(
-        #     plot_all_axis_background, plot_freqs, times_2020, show_figure=True, use_symlog=True,
-        #     title=f'Background - Antenna {antenna_idx}, X Pol'
-        # )
-
-        _plot_waterfall(
-            plot_all_axis_clean, plot_freqs, times_2020, show_figure=True,
-            title=f'Final Cleaned Data - Antenna {antenna_idx}, X Pol'
-        )
+    plot_waterfall(raw_data[ant, :, ch_low:ch_high], freqs_mhz[ch_low: ch_high], timestamps)
 
 
 if __name__ == '__main__':
@@ -1477,8 +1339,8 @@ if __name__ == '__main__':
     # lofar_layout()
     # imp_ants()
     # comp_power()
-    # resi_spectrum()
+    resi_spectrum()
     # generate_loads()
     # func_tmp()
-    waterfall()
+    # waterfall()
     pass

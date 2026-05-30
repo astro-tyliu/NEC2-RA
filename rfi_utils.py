@@ -15,7 +15,7 @@ DATA_PATH = '../general_materials/'
 DATA_PATH_PAPER = '../paper_materials/'
 
 
-def _mask_out_of_band(raw_data, start_idx, end_idx):
+def mask_out_of_band(raw_data, start_idx, end_idx):
     """
     Mask out data outside the specified frequency channel range.
 
@@ -48,77 +48,196 @@ def _mask_out_of_band(raw_data, start_idx, end_idx):
     return masked_data
 
 
-def _remove_rfi_time_axis(masked_data, time_window_bins=5, threshold_sigma=7.0):
+def flag_bad_channels_mad_of_mads(masked_data, ch_low, ch_high, freq_window_bins=15, threshold_sigma_freq=5.0):
     """
-    Robust RFI removal using a sliding median filter and Median Absolute Deviation (MAD).
-    Processes data channel by channel to account for bandpass shape.
+    Cross-frequency validation (MAD-of-MADs) applied only to the valid sub-band [ch_low, ch_high).
+    Preserves the original full shape of the data and outputs.
 
-Parameters:
+    Parameters:
     -----------
     masked_data : numpy.ma.MaskedArray
-        2D array of visibility data (Time x Frequency) with initial band masks applied.
-    time_window_bins : int, optional
-        Number of time bins used for the sliding median filter. Represents the temporal scale
-        of the background model. Default is 5.
-    threshold_sigma : float, optional
-        The clipping threshold based on equivalent Gaussian standard deviations (derived from MAD).
-        Default is 7.0.
+        2D array of visibility data (Time x Frequency) in its full shape.
+    ch_low : int
+        The starting index (inclusive) of the valid frequency band.
+    ch_high : int
+        The ending index (exclusive) of the valid frequency band.
+    freq_window_bins : int, optional
+        Number of frequency channels used for the sliding median filter. Default is 15.
+    threshold_sigma_freq : float, optional
+        The clipping threshold for the frequency channel MADs. Default is 5.0.
 
     Returns:
     --------
-    numpy.ma.MaskedArray
-        The visibility data with newly generated masks for wideband burst RFI (e.g., lightning).
+    cleaned_data : numpy.ma.MaskedArray
+        Full shape data with heavily contaminated channels newly masked in the valid band.
+    full_mad_array : numpy.ndarray
+        1D array (full n_freqs length). NaNs outside [ch_low, ch_high).
+    full_smooth_base : numpy.ndarray
+        1D array (full n_freqs length). NaNs outside [ch_low, ch_high).
     """
-    # Copy data to avoid modifying the original array
+    # Copy to avoid modifying the input array directly
     cleaned_data = masked_data.copy()
     n_times, n_freqs = cleaned_data.shape
 
-    full_background = np.zeros_like(cleaned_data.data)
-    full_residual = np.zeros_like(cleaned_data.data)
+    # Initialize full-shape arrays with NaNs
+    full_mad_array = np.full(n_freqs, np.nan)
+    full_smooth_base = np.full(n_freqs, np.nan)
 
-    for f in range(n_freqs):
-        # Skip if the entire frequency channel is already masked (e.g., out of band)
+    # ---------------------------------------------------------
+    # 1. Isolate the active sub-band for calculation
+    # ---------------------------------------------------------
+    num_active_channels = ch_high - ch_low
+    sub_mad_array = np.full(num_active_channels, np.nan)
+
+    for i, f in enumerate(range(ch_low, ch_high)):
+        # Skip if the channel is already entirely masked
         if cleaned_data[:, f].mask.all():
             continue
 
         channel_data = cleaned_data[:, f].data
-
-        # 1. Background modeling: Sliding median filter along the time axis
-        # This isolates the slow-varying sky and instrument background
-        background = median_filter(channel_data, size=time_window_bins)
-        full_background[:, f] = background
-
-        # 2. Flattening: Subtract the background to get zero-mean residuals
-        residual = channel_data - background
-        full_residual[:, f] = residual
-
-        # 3. Robust noise estimation: 使用一阶差分法 (First-order Difference)
-        # 相邻点相减可以彻底抵消缓慢的基线起伏，提取出纯粹的热噪声
         diffs = np.diff(channel_data)
 
         median_diff = np.median(diffs)
         mad_diff = np.median(np.abs(diffs - median_diff))
+        sub_mad_array[i] = mad_diff
 
-        # 这种情况下极难出现 mad_diff == 0，除非数据全是毫无噪声的数字阶梯
-        if mad_diff == 0:
-            print(f"mad_diff is zero in the channel {f}")
-            cleaned_data.mask[:, f] = True
-            continue
+    # ---------------------------------------------------------
+    # 2. Handle missing channels within the sub-band
+    # ---------------------------------------------------------
+    valid_idx = ~np.isnan(sub_mad_array)
+    if not np.any(valid_idx):
+        print("Warning: All channels in the sub-band are fully masked.")
+        return cleaned_data, full_mad_array, full_smooth_base
 
-        # 4. Define threshold: 将差分的 MAD 转换为原始数据的等效标准差
-        # 物理规律：由于差分是两个独立噪声变量相减，其方差会扩大 2 倍 (σ_diff^2 = 2 * σ^2)
-        # 因此在还原为原始数据的标准差时，必须除以根号 2 (np.sqrt(2))
-        sigma_equiv = (1.4826 * mad_diff) / np.sqrt(2)
-        threshold = threshold_sigma * sigma_equiv
+    interp_mad_diff = np.copy(sub_mad_array)
+    interp_mad_diff[~valid_idx] = np.interp(
+        np.flatnonzero(~valid_idx),
+        np.flatnonzero(valid_idx),
+        sub_mad_array[valid_idx]
+    )
 
-        # 5. Flag RFI: Mark pixels exceeding the robust threshold
+    # ---------------------------------------------------------
+    # 3. Frequency-domain baseline modeling (only on valid sub-band)
+    # ---------------------------------------------------------
+    sub_smooth_base = median_filter(interp_mad_diff, size=freq_window_bins)
+
+    # Calculate residuals for valid channels
+    residuals = sub_mad_array - sub_smooth_base
+    valid_residuals = residuals[valid_idx]
+
+    median_residual = np.median(valid_residuals)
+    mad_residual = np.median(np.abs(valid_residuals - median_residual))
+
+    sigma_equiv_freq = 1.4826 * mad_residual
+    threshold = median_residual + threshold_sigma_freq * sigma_equiv_freq
+
+    # Flag positive outliers within the sub-band
+    bad_sub_channels = (residuals > threshold) & valid_idx
+
+    # ---------------------------------------------------------
+    # 4. Map results back to the full-shape arrays
+    # ---------------------------------------------------------
+    num_bad_channels = np.sum(bad_sub_channels)
+    if num_bad_channels > 0:
+        print(f"MAD-of-MADs flagged {num_bad_channels} heavily contaminated channels in [{ch_low}, {ch_high}).")
+        # Convert local sub-band indices to global full-array indices
+        bad_global_indices = np.where(bad_sub_channels)[0] + ch_low
+        cleaned_data.mask[:, bad_global_indices] = True
+
+    # Fill the active regions of the full arrays
+    full_mad_array[ch_low:ch_high] = sub_mad_array
+    full_smooth_base[ch_low:ch_high] = sub_smooth_base
+
+    return cleaned_data, full_mad_array, full_smooth_base
+
+
+def remove_rfi_time_axis(masked_data, time_window_bins=5, threshold_sigma=7.0,
+                         mask_threshold_freq=0.5, mask_threshold_time=0.5):
+    """
+    Robust RFI removal using a sliding median filter and Median Absolute Deviation (MAD).
+    Processes data channel by channel to account for bandpass shape.
+    Includes isolated valid point filter and global broad-band/persistent RFI flagging.
+
+    Parameters:
+    - masked_data: Input NumPy masked array (time, frequency).
+    - time_window_bins: Window size for the median filter.
+    - threshold_sigma: Sigma multiplier for transient RFI detection.
+    - mask_threshold_freq: Fraction (0 to 1) of newly masked frequencies within the
+                           VALID band to trigger masking the entire time step.
+    - mask_threshold_time: Fraction (0 to 1) of masked times at a given frequency
+                           channel to trigger masking the entire frequency channel.
+    """
+    n_times, n_freqs = masked_data.shape
+
+    # --- Sanity Check Start ---
+    # 1. Check if each channel is either completely masked or completely unmasked initially
+    channel_all_masked = masked_data.mask.all(axis=0)
+    channel_none_masked = (~masked_data.mask).all(axis=0)
+    if not (channel_all_masked | channel_none_masked).all():
+        raise ValueError("Sanity Check Failed: Input mask is inconsistent along the time axis. "
+                         "Channels must be either 100% masked or 100% unmasked initially.")
+    valid_channels = np.where(channel_none_masked)[0]
+    first_valid = valid_channels[0]
+    last_valid = valid_channels[-1]
+    if len(valid_channels) != (last_valid - first_valid + 1):
+        raise ValueError("Sanity Check Failed: Unmasked channels must be continuous.")
+
+    cleaned_data = masked_data.copy()
+
+    full_background = np.zeros_like(cleaned_data.data)
+    full_residual = np.zeros_like(cleaned_data.data)
+
+    # --- Pass 1: Channel-by-channel processing ---
+    for f in range(first_valid, last_valid + 1):
+        channel_data = cleaned_data[:, f].data
+
+        # 1. Background modeling (using 'wrap' for 24-hour diurnal continuity)
+        background = median_filter(channel_data, size=time_window_bins, mode='wrap')
+        full_background[:, f] = background
+
+        # 2. Flattening
+        residual = channel_data - background
+        full_residual[:, f] = residual
+
+        # 3. The biggest difference from the smooth background
+        bg_diffs = np.diff(background)
+        max_physical_rate = np.percentile(np.abs(bg_diffs), 95)
+
+        # 4. Define threshold using equivalent sigma
+        threshold = threshold_sigma * max_physical_rate
+
+        # 5. Flag transient RFI
         rfi_mask = np.abs(residual) > threshold
         cleaned_data.mask[:, f] |= rfi_mask
+
+        # 6. Isolated point detection (including boundaries)
+        current_mask = cleaned_data.mask[:, f]
+        padded_mask = np.pad(current_mask, (1, 1), constant_values=True)
+        isolated_points = padded_mask[:-2] & padded_mask[2:] & ~current_mask
+        cleaned_data.mask[:, f] |= isolated_points
+
+    # --- Pass 2: Global threshold-based flagging ---
+
+    # 7. Broadband RFI Flagging: Focus ONLY on the valid frequency band
+    # Extract the middle slice and calculate the fraction of flagged pixels
+    valid_band_mask = cleaned_data.mask[:, first_valid: last_valid + 1]
+    fraction_masked_freqs = valid_band_mask.mean(axis=1)
+    broadband_rfi_mask = fraction_masked_freqs > mask_threshold_freq
+    # Mask ALL frequencies (including ends, to be safe) for the time steps that exceed the threshold
+    cleaned_data.mask[broadband_rfi_mask, :] = True
+
+    # 8. Persistent RFI Flagging: Focus ONLY on the valid frequency band
+    # Calculate fraction along the time axis for the valid channels
+    fraction_masked_times = cleaned_data.mask[:, first_valid: last_valid + 1].mean(axis=0)
+    persistent_rfi_mask = fraction_masked_times > mask_threshold_time
+    # Find the absolute indices of the persistent RFI channels and mask them
+    persistent_global_indices = np.where(persistent_rfi_mask)[0] + first_valid
+    cleaned_data.mask[:, persistent_global_indices] = True
 
     return cleaned_data, full_background, full_residual
 
 
-def _remove_rfi_freq_axis(masked_data, freq_window_bins=15, threshold_sigma=7.0):
+def remove_rfi_freq_axis(masked_data, freq_window_bins=15, threshold_sigma=7.0):
     """
     Removes narrowband continuous RFI by flattening the bandpass and scanning the frequency axis.
     Must be executed AFTER the time-axis broadband RFI mitigation to avoid cross-contamination.
@@ -197,59 +316,7 @@ def _remove_rfi_freq_axis(masked_data, freq_window_bins=15, threshold_sigma=7.0)
     return cleaned_data, full_interpolated_spectrum, full_local_background
 
 
-# def _plot_waterfall(
-#         data, x_axis, y_axis, save_figure=None, show_figure=None, title=None, file_dir='../results/waterfalls/',
-#         filename=None
-# ):
-#     """
-#     Plots and optionally saves a waterfall visualization of the provided 2D array.
-#     """
-#     # Hardcoded font and plot configurations
-#     base_fontsize = 30
-#     config = {
-#         "font.family": 'Times New Roman',
-#         "font.size": base_fontsize,
-#         "mathtext.fontset": 'stix',
-#     }
-#     rcParams.update(config)
-#
-#     # Calculate image extent based on axis arrays
-#     plot_extent = [x_axis.min(), x_axis.max(), y_axis.max(), y_axis.min()]
-#
-#     fig, ax = plt.subplots(figsize=(14, 8))
-#
-#     # Plotting data in log10 scale
-#     im = ax.imshow(np.log10(data), aspect='auto', extent=plot_extent, cmap='viridis')
-#
-#     # Colorbar configuration
-#     cbar = fig.colorbar(im, ax=ax)
-#     cbar.set_label(r'$\log_{10}(\mathrm{Intensity})$')
-#
-#     # Hardcoded ticks and labels
-#     ax.set_xticks([40, 50, 60, 70])
-#     ax.set_yticks([0, 4, 8, 12, 16, 20])
-#     ax.set_xlabel('Frequency (MHz)')
-#     ax.set_ylabel('Time (Hours)')
-#
-#     # Optional Title
-#     if title is not None:
-#         ax.set_title(title)
-#
-#     fig.tight_layout()
-#
-#     # Optional Save
-#     if save_figure and filename is not None:
-#         fig.savefig(file_dir + filename, bbox_inches='tight', dpi=300)
-#
-#     # Optional Show
-#     if show_figure:
-#         plt.show()
-#
-#     # Free memory
-#     plt.close(fig)
-
-
-def _plot_waterfall(data, x_axis, y_axis, use_symlog=False, linthresh=10000000.0, save_figure=None, show_figure=None,
+def plot_waterfall(data, x_axis, y_axis, use_symlog=False, linthresh=10000000.0, save_figure=None, show_figure=True,
                    title=None, file_dir='../results/waterfalls/', filename=None):
     """
     Plots and optionally saves a waterfall visualization.
@@ -277,7 +344,7 @@ def _plot_waterfall(data, x_axis, y_axis, use_symlog=False, linthresh=10000000.0
     if use_symlog:
         # SymLogNorm handles positive and negative values, linear near zero
         norm = SymLogNorm(linthresh=linthresh, base=10, vmin=np.ma.min(data), vmax=np.ma.max(data))
-        cbar_label = r'$\mathrm{SymLog}_{10}(\mathrm{Intensity})$'
+        cbar_label = 'Intensity'
         cmap = 'seismic'
     else:
         # Standard LogNorm for strictly positive data (like Raw Visibility)
@@ -285,7 +352,7 @@ def _plot_waterfall(data, x_axis, y_axis, use_symlog=False, linthresh=10000000.0
         # Use a small vmin to avoid log(<=0) errors if standard data has minor artifacts
         valid_min = np.ma.min(data[data > 0]) if np.any(data > 0) else 1e-5
         norm = LogNorm(vmin=valid_min, vmax=np.ma.max(data))
-        cbar_label = r'$\log_{10}(\mathrm{Intensity})$'
+        cbar_label = 'Intensity'
         cmap = 'viridis'
 
     # Plot using the configured norm instead of manual np.log10()
@@ -294,7 +361,7 @@ def _plot_waterfall(data, x_axis, y_axis, use_symlog=False, linthresh=10000000.0
     cbar = fig.colorbar(im, ax=ax)
     cbar.set_label(cbar_label)
 
-    ax.set_xticks([40, 50, 60, 70])
+    # ax.set_xticks([40, 50, 60, 70])
     ax.set_yticks([0, 4, 8, 12, 16, 20])
     ax.set_xlabel('Frequency (MHz)')
     ax.set_ylabel('Time (Hours)')
@@ -313,7 +380,7 @@ def _plot_waterfall(data, x_axis, y_axis, use_symlog=False, linthresh=10000000.0
     plt.close(fig)
 
 
-def _plot_spectra(freqs, data, show_figure=False, filename=None, title=None, alpha=0.3):
+def plot_spectra(freqs, data, show_figure=False, filename=None, title=None, alpha=0.3):
     """
     Plots multiple 1D frequency spectra on a single plot.
     Lines are color-coded based on their time index to visualize temporal evolution.
@@ -376,7 +443,7 @@ def _plot_spectra(freqs, data, show_figure=False, filename=None, title=None, alp
     plt.close(fig)
 
 
-def _plot_time_series(times, data, use_log=False, show_figure=False, filename=None, title=None, alpha=0.3):
+def plot_time_series(times, data, use_log=False, show_figure=False, filename=None, title=None, alpha=0.3):
     """
     Plots multiple 1D time series on a single plot.
     Lines are color-coded based on their frequency index to visualize spectral differences over time.
@@ -420,6 +487,7 @@ def _plot_time_series(times, data, use_log=False, show_figure=False, filename=No
     cbar.set_label('Frequency Index')
 
     # 6. Set labels and axes limits
+    ax.set_ylim(4.5e6, 9.0e6)
     ax.set_xlabel('Time (Hours)')
     ax.set_ylabel('Intensity')
     ax.set_xlim(times.min(), times.max())
@@ -453,7 +521,7 @@ def rfi_flagging(polar='X'):
         raw_data = raw_data[1::2, :, :]
     else:
         raise ValueError('Invalid param: "polar" must be "X" or "Y".')
-    # print('The shape of raw_data:', raw_data.shape)
+    print('The shape of raw_data:', raw_data.shape)
 
     ds = np.load(RAW_DIR + 'SE607_20240916_180834_spw3_int519_dur86400_sst.npz')
     freqs_mhz = ds['frequencies'] / 1e6
@@ -465,46 +533,38 @@ def rfi_flagging(polar='X'):
     end_idx = valid_indices[-1] + 1  # Excluded
     # plot_freqs = freqs_mhz[start_idx:end_idx]
 
-    for antenna_idx in range(1):
+    for antenna_idx in range(90, 96):
         raw_data_ant = raw_data[antenna_idx, :, :]
 
-        mask_out_of_data = _mask_out_of_band(raw_data_ant, start_idx, end_idx)
-        print(np.std(mask_out_of_data.compressed()))
-        for s in range(5, 0, -1):
-            time_axis_clean_data, time_axis_background, time_axis_residual = _remove_rfi_time_axis(
-                mask_out_of_data, time_window_bins=5, threshold_sigma=s
-            )
-            masked_residual = np.ma.masked_array(time_axis_residual, mask=time_axis_clean_data.mask)
-            # print(np.sum(time_axis_clean_data.mask[:, start_idx:end_idx]) / (len(times_2020) * (end_idx - start_idx)), np.std(time_axis_clean_data.compressed()))
-            print(np.sum(time_axis_clean_data.mask[:, start_idx:end_idx]) / (
-                        len(times_2020) * (end_idx - start_idx)), np.std(masked_residual.compressed()))
-        all_axis_clean_data, all_axis_interp_spectrum, all_axis_background = _remove_rfi_freq_axis(
-            time_axis_clean_data, freq_window_bins=5, threshold_sigma=15.0
+        mask_out_of_data = mask_out_of_band(raw_data_ant, start_idx, end_idx)
+        print(antenna_idx, np.std(mask_out_of_data.compressed()))
+        # for s in range(5, 0, -1):
+        #     time_axis_clean_data, time_axis_background, time_axis_residual = remove_rfi_time_axis(
+        #         mask_out_of_data, time_window_bins=5, threshold_sigma=s
+        #     )
+        #     masked_residual = np.ma.masked_array(time_axis_residual, mask=time_axis_clean_data.mask)
+        #     # print(np.sum(time_axis_clean_data.mask[:, start_idx:end_idx]) / (len(times_2020) * (end_idx - start_idx)), np.std(time_axis_clean_data.compressed()))
+        #     print(np.sum(time_axis_clean_data.mask[:, start_idx:end_idx]) / (
+        #                 len(times_2020) * (end_idx - start_idx)), np.std(masked_residual.compressed()))
+        time_axis_clean_data, time_axis_background, time_axis_residual = remove_rfi_time_axis(
+            mask_out_of_data, time_window_bins=7, threshold_sigma=2.0
         )
-
-        # _plot_time_series(times_2020, raw_data_ant[:, start_idx:end_idx], show_figure=True)
-        # _plot_time_series(times_2020, time_axis_background[:, start_idx:end_idx], show_figure=True)
-        # _plot_time_series(times_2020, time_axis_clean_data[:, start_idx:end_idx], show_figure=True)
-
-        # _plot_spectra(
-        #     freqs_mhz[start_idx:end_idx], mask_out_of_data[:, start_idx:end_idx], show_figure=True, filename=None,
-        #     title=None, alpha=0.3
+        print(np.shape(raw_data), np.shape(time_axis_clean_data))
+        # all_axis_clean_data, all_axis_interp_spectrum, all_axis_background = remove_rfi_freq_axis(
+        #     time_axis_clean_data, freq_window_bins=5, threshold_sigma=15.0
         # )
-        # _plot_spectra(
-        #     freqs_mhz[start_idx:end_idx], time_axis_background[:, start_idx:end_idx], show_figure=True, filename=None,
-        #     title=None, alpha=0.3
-        # )
-        _plot_spectra(
-            freqs_mhz[start_idx:end_idx], time_axis_clean_data[:, start_idx:end_idx], show_figure=True, filename=None,
+
+        diffs_frq = (time_axis_clean_data[:, 1:] - time_axis_clean_data[:, :-1]) / time_axis_clean_data[:, :-1]
+        plot_spectra(
+            freqs_mhz[start_idx:end_idx], diffs_frq[:, start_idx:end_idx], show_figure=True, filename=None,
             title=None, alpha=0.3
         )
-
-        # _plot_waterfall(mask_out_of_data[:, start_idx:end_idx], freqs_mhz[start_idx:end_idx],
+        # plot_waterfall(time_axis_clean_data[:, start_idx:end_idx], freqs_mhz[start_idx:end_idx],
         #                 times_2020, show_figure=True)
-        # _plot_waterfall(time_axis_background[:, start_idx:end_idx], freqs_mhz[start_idx:end_idx],
-        #                 times_2020, show_figure=True)
-        _plot_waterfall(time_axis_clean_data[:, start_idx:end_idx], freqs_mhz[start_idx:end_idx],
-                        times_2020, show_figure=True)
+        # # _plot_waterfall(time_axis_background[:, start_idx:end_idx], freqs_mhz[start_idx:end_idx],
+        # #                 times_2020, show_figure=True)
+        # plot_waterfall(time_axis_clean_data[:, start_idx:end_idx], freqs_mhz[start_idx:end_idx],
+        #                times_2020, show_figure=False)
 
         # plot_raw_data = raw_data[antenna_idx, :, start_idx:end_idx]
         # print('The shape of plot_raw_data:', plot_raw_data.shape)
@@ -523,29 +583,21 @@ def rfi_flagging(polar='X'):
 
         # _plot_spectra(freqs_mhz[start_idx:end_idx], raw_data_ant[:, start_idx:end_idx], show_figure=True)
 
-        #
-        # # _plot_spectra(freqs_mhz[start_idx:end_idx], mask_out_of_data[:, start_idx:end_idx], show_figure=True)
-        #
-        # # _plot_time_series(times_2020, time_axis_background[:, start_idx:end_idx], show_figure=True)
-        #
-        # # _plot_spectra(plot_freqs, time_axis_residual[:, start_idx:end_idx], show_figure=True)
-        #
-        # # _plot_time_series(times_2020, time_axis_residual[:, start_idx:end_idx], show_figure=True)
-        #
-        # # _plot_spectra(plot_freqs, plot_time_axis_clean, show_figure=True)
-        #
-        # _plot_time_series(times_2020, time_axis_clean_data[:, start_idx+1:end_idx:10], show_figure=True)
-
-        # step = 10
-        # for j in range(step):
-        #     _plot_time_series(times_2020, raw_data_ant[:, start_idx+j:end_idx:10], show_figure=False,
-        #                       filename=f'../results/raw_data_vis_time/raw_x_antenna{antenna_idx:02}_group{j}.png',
-        #                       title=f'raw data, channel group {j}, antenna {antenna_idx:02}, X pol', alpha=1.0
-        #                       )
-        #     _plot_time_series(times_2020, time_axis_clean_data[:, start_idx+j:end_idx:step], show_figure=False,
-        #                       filename=f'../results/step1_flagging_vis_time/step1_x_antenna{antenna_idx:02}_group{j}.png',
-        #                       title=f'Step 1, channel group {j}, antenna {antenna_idx:02}, X pol', alpha=1.0
-        #                       )
+        # num_groups = 10
+        # step = int(np.ceil((end_idx - start_idx) / num_groups))
+        # for j in range(num_groups):
+        #     start_jth = start_idx + j * step
+        #     end_jth = min(start_idx + (j + 1) * step, end_idx)
+        #     # plot_time_series(
+        #     #     times_2020, raw_data_ant[:, start_jth:end_jth], show_figure=False,
+        #     #     filename=f'../results/raw_data_vis_time/raw_x_antenna{antenna_idx:02}_group{j}.png',
+        #     #     title=f'raw data, channel group {j}, antenna {antenna_idx:02}, X pol', alpha=1.0
+        #     # )
+        #     plot_time_series(
+        #         times_2020, time_axis_clean_data[:, start_jth:end_jth], show_figure=False,
+        #         filename=f'../results/step1_flagging_vis_time/step1_x_antenna{antenna_idx:02}_group{j}.png',
+        #         title=f'Step 1, channel group {j}, antenna {antenna_idx:02}, X pol', alpha=1.0
+        #     )
 
         # _plot_spectra(plot_freqs, plot_all_axis_clean, show_figure=True)
         #
